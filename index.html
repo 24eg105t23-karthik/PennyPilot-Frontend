@@ -1,0 +1,222 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f5f6f2">
+    <title>PennyPilot | Smart Expense Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="#">PennyPilot<span>.</span></a>
+        <p>Your money, in perspective.</p>
+    </header>
+
+    <main class="dashboard">
+        <section class="welcome">
+            <div>
+                <p class="eyebrow">YOUR FINANCIAL SPACE</p>
+                <h1>Know where your money goes.</h1>
+                <p>Track spending. Make smarter decisions.</p>
+            </div>
+            <div class="date-card">
+                <p>TODAY</p>
+                <h3 id="todayDate">Loading...</h3>
+            </div>
+        </section>
+
+        <section class="summary-grid">
+            <article class="summary-card">
+                <p>Monthly Budget</p>
+                <h2 id="budget">₹10,000</h2>
+                <span class="card-note">Your monthly limit</span>
+            </article>
+
+            <button class="summary-card total-card" id="totalCard"
+                    type="button" aria-label="View all expenses">
+                <p>Total Spent <span class="click-hint">View all ↗</span></p>
+                <h2 id="totalSpent">₹0</h2>
+                <span class="card-note">Click to see all expenses</span>
+            </button>
+
+            <article class="summary-card">
+                <p>Money Remaining</p>
+                <h2 id="remaining">₹10,000</h2>
+                <span class="card-note">Budget minus spending</span>
+            </article>
+        </section>
+
+        <!-- QUICK CASH SECTION -->
+        <section class="panel quick-cash-panel">
+            <h2>Quick Cash</h2>
+            <p class="muted">Record small cash expenses in seconds.</p>
+
+            <!-- NEW: SPEAKING FEATURE -->
+            <button type="button" id="voiceButton" class="voice-button">
+                🎤 Speak your expense
+            </button>
+            <p id="voiceMessage" class="form-message" aria-live="polite"></p>
+            <!-- END SPEAKING FEATURE -->
+
+            <div class="quick-cash-buttons">
+                <button type="button" class="cash-amount-button" data-cash-amount="10">₹10</button>
+                <button type="button" class="cash-amount-button" data-cash-amount="20">₹20</button>
+                <button type="button" class="cash-amount-button" data-cash-amount="50">₹50</button>
+                <button type="button" class="cash-amount-button" data-cash-amount="100">₹100</button>
+            </div>
+
+            <label for="quickCashName">What did you spend on?</label>
+            <input id="quickCashName" type="text"
+                   placeholder="e.g. Tea, snacks, bus fare" maxlength="80">
+
+            <label for="quickCashCategory">Category</label>
+            <select id="quickCashCategory">
+                <option value="Food">Food</option>
+                <option value="Travel">Travel</option>
+                <option value="Shopping">Shopping</option>
+                <option value="Bills">Bills</option>
+                <option value="Education">Education</option>
+                <option value="Other">Other</option>
+            </select>
+
+            <label for="quickCashAmount">Amount (₹)</label>
+            <input id="quickCashAmount" type="number"
+                   min="0.01" max="100000000" step="0.01"
+                   placeholder="Choose a button or type an amount">
+
+            <button type="button" id="addQuickCashButton" class="primary-button">
+                + Add Cash Expense
+            </button>
+            <p id="quickCashMessage" class="form-message" aria-live="polite"></p>
+        </section>
+        <!-- END QUICK CASH SECTION -->
+
+        <section class="panel budget-panel">
+            <div class="section-heading">
+                <div>
+                    <h2>Monthly budget progress</h2>
+                    <p class="muted">See how much of your budget you've used.</p>
+                </div>
+                <strong id="budgetPercentage">0%</strong>
+            </div>
+            <div class="progress-track" role="progressbar"
+                 aria-label="Monthly budget used"
+                 aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" id="budgetProgress">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p class="progress-caption" id="progressCaption">
+                ₹0 spent · ₹10,000 remaining
+            </p>
+        </section>
+
+        <section class="analytics-grid">
+            <article class="panel chart-panel">
+                <div class="section-heading">
+                    <div>
+                        <h2>Where your money goes</h2>
+                        <p class="muted">Category-wise spending breakdown.</p>
+                    </div>
+                </div>
+
+                <div class="chart-layout">
+                    <div class="donut-wrap">
+                        <canvas id="expenseChart"
+                                role="img"
+                                aria-label="Donut chart of spending by category">
+                            Spending by category
+                        </canvas>
+                        <div class="donut-center">
+                            <span>Total spent</span>
+                            <strong id="chartTotal">₹0</strong>
+                        </div>
+                    </div>
+                    <div id="categoryLegend" class="category-legend">
+                        <p class="muted">Add expenses to see your chart.</p>
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel insights-panel">
+                <h2>Smart saving insights</h2>
+                <p class="muted">Understand your spending habits.</p>
+                <div id="insights">
+                    <div class="insight-item">
+                        <span class="insight-icon">✦</span>
+                        <div>
+                            <strong>Start tracking</strong>
+                            <p>Add expenses to receive personalized saving suggestions.</p>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="content-grid">
+            <article class="panel">
+                <h2>Add an expense</h2>
+                <p class="muted">Record where your money goes.</p>
+
+                <form id="expenseForm">
+                    <label for="expenseName">Expense name</label>
+                    <input id="expenseName" type="text"
+                           placeholder="e.g. Lunch" maxlength="80" required>
+
+                    <label for="expenseAmount">Amount (₹)</label>
+                    <input id="expenseAmount" type="number"
+                           min="0.01" max="100000000"
+                           step="0.01" placeholder="e.g. 150" required>
+
+                    <label for="expenseCategory">Category</label>
+                    <select id="expenseCategory" required>
+                        <option value="Food">Food</option>
+                        <option value="Travel">Travel</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Bills">Bills</option>
+                        <option value="Education">Education</option>
+                        <option value="Other">Other</option>
+                    </select>
+
+                    <button class="primary-button" type="submit">
+                        + Add expense
+                    </button>
+                    <p id="formMessage" class="form-message" aria-live="polite"></p>
+                </form>
+            </article>
+
+            <article class="panel">
+                <div class="section-heading">
+                    <div>
+                        <h2>Recent transactions</h2>
+                        <p class="muted">Your latest spending activity.</p>
+                    </div>
+                    <button id="viewAllButton" class="text-button"
+                            type="button">View all</button>
+                </div>
+                <div id="expenseList" class="expense-list"></div>
+            </article>
+        </section>
+
+        <section class="panel all-expenses-panel" id="allExpensesSection" hidden>
+            <div class="section-heading">
+                <div>
+                    <h2>All your expenses</h2>
+                    <p class="muted">Every expense recorded in PennyPilot.</p>
+                </div>
+                <button id="closeAllButton" class="text-button"
+                        type="button">Close ✕</button>
+            </div>
+            <div id="allExpenseList" class="expense-list"></div>
+        </section>
+
+        <footer>
+            <p>PennyPilot · Spend with intention.</p>
+            <p>Your data is stored in this browser.</p>
+        </footer>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
