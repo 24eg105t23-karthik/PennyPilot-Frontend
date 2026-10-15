@@ -1,24 +1,14 @@
-
+```javascript
 const MONTHLY_BUDGET = 10000;
 
 const CATEGORIES = [
-    "Food",
-    "Travel",
-    "Shopping",
-    "Bills",
-    "Education",
-    "Health",
-    "Other"
+    "Food", "Travel", "Shopping", "Bills",
+    "Education", "Health", "Other"
 ];
 
 const CHART_COLORS = [
-    "#2563EB",
-    "#7C3AED",
-    "#059669",
-    "#0891B2",
-    "#6D28D9",
-    "#10B981",
-    "#D4A017"
+    "#2563EB", "#7C3AED", "#059669", "#0891B2",
+    "#6D28D9", "#10B981", "#D4A017"
 ];
 
 const STORAGE_KEY = "pennypilot-expenses";
@@ -36,7 +26,6 @@ const expenseList = $("expenseList");
 const allExpenseList = $("allExpenseList");
 const allExpensesSection = $("allExpensesSection");
 const chartCanvas = $("expenseChart");
-
 const chartContext = chartCanvas ? chartCanvas.getContext("2d") : null;
 
 let expenses = [];
@@ -59,7 +48,10 @@ function todayIsoDate() {
 
 function showMessage(message, isError = false) {
     const element = $("formMessage") || $("appMessage");
-    if (!element) return;
+    if (!element) {
+        console.log(message);
+        return;
+    }
     element.textContent = message;
     element.style.color = isError ? "#b84040" : "#286b50";
 }
@@ -471,7 +463,11 @@ function openAllExpenses() {
     if (!allExpensesSection) return;
 
     allExpensesSection.hidden = false;
-    renderExpenseList(allExpenseList, [...expenses].reverse(), "No expenses recorded yet.");
+    renderExpenseList(
+        allExpenseList,
+        [...expenses].reverse(),
+        "No expenses recorded yet."
+    );
 
     allExpensesSection.scrollIntoView({
         behavior: "smooth",
@@ -521,7 +517,7 @@ if ($("closeAllButton")) {
 
 window.addEventListener("resize", () => renderChart(getTotals()));
 
-// QUICK CASH - original controls
+// QUICK CASH
 const quickCashAmount = $("quickCashAmount");
 const quickCashName = $("quickCashName");
 const quickCashCategory = $("quickCashCategory");
@@ -537,7 +533,9 @@ document.querySelectorAll(".cash-amount-button").forEach(button => {
 });
 
 if ($("addQuickCashButton")) {
-    $("addQuickCashButton").addEventListener("click", () => {
+    $("addQuickCashButton").addEventListener("click", event => {
+        event.preventDefault();
+
         const name = quickCashName?.value.trim() || "";
         const amount = Number(quickCashAmount?.value);
         const category = quickCashCategory?.value || "";
@@ -560,14 +558,16 @@ if ($("addQuickCashButton")) {
     });
 }
 
-// Compatibility with newer HTML Quick Add buttons
+// COMPATIBILITY WITH QUICK ADD BUTTONS
 document.querySelectorAll("[data-quick-cash]").forEach(button => {
     button.addEventListener("click", () => {
         const titleField = $("expenseTitle") || $("expenseName");
         const amountField = $("expenseAmount");
 
         if (amountField) amountField.value = button.dataset.quickCash;
-        if (titleField && !titleField.value.trim()) titleField.value = "Quick expense";
+        if (titleField && !titleField.value.trim()) {
+            titleField.value = "Quick expense";
+        }
         if ($("expenseCategory") && !$("expenseCategory").value) {
             $("expenseCategory").value = "Other";
         }
@@ -655,7 +655,8 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
             return;
         }
 
-        voiceMessage.textContent = "Listening... Say, for example, 'Spent 20 rupees on tea'.";
+        voiceMessage.textContent =
+            "Listening... Say, for example, 'Spent 20 rupees on tea'.";
         isListening = true;
         voiceButton.disabled = true;
 
@@ -664,7 +665,8 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
         } catch (error) {
             isListening = false;
             voiceButton.disabled = false;
-            voiceMessage.textContent = "Could not start the microphone. Please try again.";
+            voiceMessage.textContent =
+                "Could not start the microphone. Please try again.";
         }
     });
 
@@ -698,7 +700,7 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
     };
 })();
 
-// SUPABASE AUTHENTICATION ADD-ON
+// SUPABASE AUTHENTICATION
 (() => {
     const authSection = $("authSection");
     const appSection = $("appSection");
@@ -709,20 +711,40 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
     const signOutButton = $("signOutButton");
     const message = $("appMessage");
 
-    // Don't affect the original dashboard if this page has no auth section.
-    if (!authSection || !appSection || !emailField || !passwordField ||
-        !signUpButton || !signInButton || !signOutButton) return;
-
-    const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
-    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_eHuDa1uoMvWdv-hqAWYviA_YrnQoBhg";
-
     function authMessage(text, isError = false) {
         if (!message) {
+            console[isError ? "error" : "log"](text);
             alert(text);
             return;
         }
+
         message.textContent = text;
         message.style.color = isError ? "#b84040" : "#286b50";
+    }
+
+    // Report missing HTML elements instead of silently doing nothing.
+    const missingElements = [];
+
+    if (!authSection) missingElements.push("authSection");
+    if (!appSection) missingElements.push("appSection");
+    if (!emailField) missingElements.push("authEmail");
+    if (!passwordField) missingElements.push("authPassword");
+    if (!signUpButton) missingElements.push("signUpButton");
+    if (!signInButton) missingElements.push("signInButton");
+    if (!signOutButton) missingElements.push("signOutButton");
+
+    if (missingElements.length) {
+        console.error(
+            "PennyPilot authentication HTML elements are missing:",
+            missingElements.join(", ")
+        );
+        authMessage(
+            "Sign-in setup error: missing HTML element(s): " +
+            missingElements.join(", ") +
+            ". Check the IDs in index.html.",
+            true
+        );
+        return;
     }
 
     function showSignedOut() {
@@ -741,17 +763,33 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
         renderDashboard();
     }
 
-    if (!window.supabase || typeof window.supabase.createClient !== "function") {
-        authMessage("Supabase library did not load. Check index.html.", true);
+    if (!window.supabase ||
+        typeof window.supabase.createClient !== "function") {
+        showSignedOut();
+        authMessage(
+            "Supabase library did not load. Check that the Supabase CDN script is included before script.js in index.html.",
+            true
+        );
         return;
     }
+
+    const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY =
+        "sb_publishable_eHuDa1uoMvWdv-hqAWYviA_YrnQoBhg";
 
     const supabaseClient = window.supabase.createClient(
         SUPABASE_URL,
         SUPABASE_PUBLISHABLE_KEY
     );
 
-    signUpButton.addEventListener("click", async () => {
+    // Prevent form submission or page reload if these buttons are inside a form.
+    signUpButton.type = "button";
+    signInButton.type = "button";
+    signOutButton.type = "button";
+
+    signUpButton.addEventListener("click", async event => {
+        event.preventDefault();
+
         const email = emailField.value.trim();
         const password = passwordField.value;
 
@@ -777,21 +815,27 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
             if (error) throw error;
 
             if (data.session && data.user) {
-                authMessage("Account created successfully.");
+                authMessage("Account created successfully!");
                 showSignedIn(data.user);
             } else {
                 authMessage(
-                    "Account created. Check your email for confirmation, then sign in."
+                    "Your account request was successful. Check your email for a confirmation link, then sign in."
                 );
             }
         } catch (error) {
-            authMessage(error.message || "Could not create account.", true);
+            console.error("PennyPilot sign-up error:", error);
+            authMessage(
+                error.message || "Could not create your account. Please try again.",
+                true
+            );
         } finally {
             signUpButton.disabled = false;
         }
     });
 
-    signInButton.addEventListener("click", async () => {
+    signInButton.addEventListener("click", async event => {
+        event.preventDefault();
+
         const email = emailField.value.trim();
         const password = passwordField.value;
 
@@ -812,16 +856,21 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
 
             if (error) throw error;
 
-            authMessage("Signed in successfully.");
+            authMessage("Signed in successfully!");
             showSignedIn(data.user);
         } catch (error) {
-            authMessage(error.message || "Could not sign in.", true);
+            console.error("PennyPilot sign-in error:", error);
+            authMessage(
+                error.message || "Could not sign in. Check your credentials.",
+                true
+            );
         } finally {
             signInButton.disabled = false;
         }
     });
 
-    signOutButton.addEventListener("click", async () => {
+    signOutButton.addEventListener("click", async event => {
+        event.preventDefault();
         signOutButton.disabled = true;
 
         try {
@@ -831,27 +880,43 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
             showSignedOut();
             authMessage("You have signed out.");
         } catch (error) {
+            console.error("PennyPilot sign-out error:", error);
             authMessage(error.message || "Could not sign out.", true);
         } finally {
             signOutButton.disabled = false;
         }
     });
 
+    // Keep the screen synchronized with the saved Supabase login session.
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (session?.user) {
+            showSignedIn(session.user);
+        } else {
+            showSignedOut();
+        }
+    });
+
     supabaseClient.auth.getSession().then(({ data, error }) => {
         if (error) {
+            console.error("PennyPilot session error:", error);
             showSignedOut();
-            authMessage(error.message || "Could not check session.", true);
+            authMessage(error.message || "Could not check your session.", true);
             return;
         }
 
-        if (data.session) {
+        if (data.session?.user) {
             showSignedIn(data.session.user);
         } else {
             showSignedOut();
         }
+    }).catch(error => {
+        console.error("PennyPilot session error:", error);
+        showSignedOut();
+        authMessage("Could not check your login session. Please refresh.", true);
     });
 })();
 
 // START THE DASHBOARD
 loadExpensesFromStorage();
 renderDashboard();
+```
