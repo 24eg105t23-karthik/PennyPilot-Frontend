@@ -1,222 +1,502 @@
+```javascript
+// PennyPilot — Supabase-powered expense tracker
+// Uses the signed-in user's session and database row-level security.
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#f5f6f2">
-    <title>PennyPilot | Smart Expense Tracker</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <header class="topbar">
-        <a class="brand" href="#">PennyPilot<span>.</span></a>
-        <p>Your money, in perspective.</p>
-    </header>
+const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
 
-    <main class="dashboard">
-        <section class="welcome">
-            <div>
-                <p class="eyebrow">YOUR FINANCIAL SPACE</p>
-                <h1>Know where your money goes.</h1>
-                <p>Track spending. Make smarter decisions.</p>
-            </div>
-            <div class="date-card">
-                <p>TODAY</p>
-                <h3 id="todayDate">Loading...</h3>
-            </div>
-        </section>
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
 
-        <section class="summary-grid">
-            <article class="summary-card">
-                <p>Monthly Budget</p>
-                <h2 id="budget">₹10,000</h2>
-                <span class="card-note">Your monthly limit</span>
-            </article>
+let expenses = [];
+let editingExpenseId = null;
 
-            <button class="summary-card total-card" id="totalCard"
-                    type="button" aria-label="View all expenses">
-                <p>Total Spent <span class="click-hint">View all ↗</span></p>
-                <h2 id="totalSpent">₹0</h2>
-                <span class="card-note">Click to see all expenses</span>
-            </button>
+const $ = (id) => document.getElementById(id);
 
-            <article class="summary-card">
-                <p>Money Remaining</p>
-                <h2 id="remaining">₹10,000</h2>
-                <span class="card-note">Budget minus spending</span>
-            </article>
-        </section>
+function money(value) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2
+  }).format(Number(value) || 0);
+}
 
-        <!-- QUICK CASH SECTION -->
-        <section class="panel quick-cash-panel">
-            <h2>Quick Cash</h2>
-            <p class="muted">Record small cash expenses in seconds.</p>
+function showMessage(message, isError = false) {
+  let element = $("appMessage");
 
-            <!-- NEW: SPEAKING FEATURE -->
-            <button type="button" id="voiceButton" class="voice-button">
-                🎤 Speak your expense
-            </button>
-            <p id="voiceMessage" class="form-message" aria-live="polite"></p>
-            <!-- END SPEAKING FEATURE -->
+  if (!element) {
+    element = document.createElement("p");
+    element.id = "appMessage";
+    element.setAttribute("role", "status");
+    document.body.prepend(element);
+  }
 
-            <div class="quick-cash-buttons">
-                <button type="button" class="cash-amount-button" data-cash-amount="10">₹10</button>
-                <button type="button" class="cash-amount-button" data-cash-amount="20">₹20</button>
-                <button type="button" class="cash-amount-button" data-cash-amount="50">₹50</button>
-                <button type="button" class="cash-amount-button" data-cash-amount="100">₹100</button>
-            </div>
+  element.textContent = message;
+  element.style.color = isError ? "#b91c1c" : "#166534";
+}
 
-            <label for="quickCashName">What did you spend on?</label>
-            <input id="quickCashName" type="text"
-                   placeholder="e.g. Tea, snacks, bus fare" maxlength="80">
+function setSignedInUI(user) {
+  const authSection = $("authSection");
+  const appSection = $("appSection");
+  const userLabel = $("userEmail");
 
-            <label for="quickCashCategory">Category</label>
-            <select id="quickCashCategory">
-                <option value="Food">Food</option>
-                <option value="Travel">Travel</option>
-                <option value="Shopping">Shopping</option>
-                <option value="Bills">Bills</option>
-                <option value="Education">Education</option>
-                <option value="Other">Other</option>
-            </select>
+  if (authSection) authSection.hidden = Boolean(user);
+  if (appSection) appSection.hidden = !user;
+  if (userLabel) userLabel.textContent = user ? user.email : "";
 
-            <label for="quickCashAmount">Amount (₹)</label>
-            <input id="quickCashAmount" type="number"
-                   min="0.01" max="100000000" step="0.01"
-                   placeholder="Choose a button or type an amount">
+  document.body.classList.toggle("signed-in", Boolean(user));
+}
 
-            <button type="button" id="addQuickCashButton" class="primary-button">
-                + Add Cash Expense
-            </button>
-            <p id="quickCashMessage" class="form-message" aria-live="polite"></p>
-        </section>
-        <!-- END QUICK CASH SECTION -->
+async function signUp() {
+  const email = $("authEmail")?.value.trim();
+  const password = $("authPassword")?.value;
 
-        <section class="panel budget-panel">
-            <div class="section-heading">
-                <div>
-                    <h2>Monthly budget progress</h2>
-                    <p class="muted">See how much of your budget you've used.</p>
-                </div>
-                <strong id="budgetPercentage">0%</strong>
-            </div>
-            <div class="progress-track" role="progressbar"
-                 aria-label="Monthly budget used"
-                 aria-valuemin="0" aria-valuemax="100"
-                 aria-valuenow="0" id="budgetProgress">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <p class="progress-caption" id="progressCaption">
-                ₹0 spent · ₹10,000 remaining
-            </p>
-        </section>
+  if (!email || !password) {
+    showMessage("Enter your email and password.", true);
+    return;
+  }
 
-        <section class="analytics-grid">
-            <article class="panel chart-panel">
-                <div class="section-heading">
-                    <div>
-                        <h2>Where your money goes</h2>
-                        <p class="muted">Category-wise spending breakdown.</p>
-                    </div>
-                </div>
+  if (password.length < 6) {
+    showMessage("Use a password with at least 6 characters.", true);
+    return;
+  }
 
-                <div class="chart-layout">
-                    <div class="donut-wrap">
-                        <canvas id="expenseChart"
-                                role="img"
-                                aria-label="Donut chart of spending by category">
-                            Spending by category
-                        </canvas>
-                        <div class="donut-center">
-                            <span>Total spent</span>
-                            <strong id="chartTotal">₹0</strong>
-                        </div>
-                    </div>
-                    <div id="categoryLegend" class="category-legend">
-                        <p class="muted">Add expenses to see your chart.</p>
-                    </div>
-                </div>
-            </article>
+  const { error } = await supabaseClient.auth.signUp({
+    email,
+    password
+  });
 
-            <article class="panel insights-panel">
-                <h2>Smart saving insights</h2>
-                <p class="muted">Understand your spending habits.</p>
-                <div id="insights">
-                    <div class="insight-item">
-                        <span class="insight-icon">✦</span>
-                        <div>
-                            <strong>Start tracking</strong>
-                            <p>Add expenses to receive personalized saving suggestions.</p>
-                        </div>
-                    </div>
-                </div>
-            </article>
-        </section>
+  if (error) {
+    showMessage(error.message, true);
+    return;
+  }
 
-        <section class="content-grid">
-            <article class="panel">
-                <h2>Add an expense</h2>
-                <p class="muted">Record where your money goes.</p>
+  showMessage(
+    "Account request completed. If email confirmation is enabled, check your inbox before signing in."
+  );
+}
 
-                <form id="expenseForm">
-                    <label for="expenseName">Expense name</label>
-                    <input id="expenseName" type="text"
-                           placeholder="e.g. Lunch" maxlength="80" required>
+async function signIn() {
+  const email = $("authEmail")?.value.trim();
+  const password = $("authPassword")?.value;
 
-                    <label for="expenseAmount">Amount (₹)</label>
-                    <input id="expenseAmount" type="number"
-                           min="0.01" max="100000000"
-                           step="0.01" placeholder="e.g. 150" required>
+  if (!email || !password) {
+    showMessage("Enter your email and password.", true);
+    return;
+  }
 
-                    <label for="expenseCategory">Category</label>
-                    <select id="expenseCategory" required>
-                        <option value="Food">Food</option>
-                        <option value="Travel">Travel</option>
-                        <option value="Shopping">Shopping</option>
-                        <option value="Bills">Bills</option>
-                        <option value="Education">Education</option>
-                        <option value="Other">Other</option>
-                    </select>
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password
+  });
 
-                    <button class="primary-button" type="submit">
-                        + Add expense
-                    </button>
-                    <p id="formMessage" class="form-message" aria-live="polite"></p>
-                </form>
-            </article>
+  if (error) {
+    showMessage(error.message, true);
+    return;
+  }
 
-            <article class="panel">
-                <div class="section-heading">
-                    <div>
-                        <h2>Recent transactions</h2>
-                        <p class="muted">Your latest spending activity.</p>
-                    </div>
-                    <button id="viewAllButton" class="text-button"
-                            type="button">View all</button>
-                </div>
-                <div id="expenseList" class="expense-list"></div>
-            </article>
-        </section>
+  showMessage("Signed in successfully.");
+  await loadExpenses();
+}
 
-        <section class="panel all-expenses-panel" id="allExpensesSection" hidden>
-            <div class="section-heading">
-                <div>
-                    <h2>All your expenses</h2>
-                    <p class="muted">Every expense recorded in PennyPilot.</p>
-                </div>
-                <button id="closeAllButton" class="text-button"
-                        type="button">Close ✕</button>
-            </div>
-            <div id="allExpenseList" class="expense-list"></div>
-        </section>
+async function signOut() {
+  const { error } = await supabaseClient.auth.signOut();
 
-        <footer>
-            <p>PennyPilot · Spend with intention.</p>
-            <p>Your data is stored in this browser.</p>
-        </footer>
-    </main>
+  if (error) {
+    showMessage(error.message, true);
+    return;
+  }
 
-    <script src="script.js"></script>
-</body>
-</html>
+  expenses = [];
+  renderDashboard();
+  showMessage("Signed out.");
+}
+
+async function loadExpenses() {
+  const { data: { user } } = await supabaseClient.auth.getUser();
+
+  if (!user) {
+    expenses = [];
+    renderDashboard();
+    setSignedInUI(null);
+    return;
+  }
+
+  setSignedInUI(user);
+
+  const { data, error } = await supabaseClient
+    .from("expenses")
+    .select("*")
+    .order("expense_date", { ascending: false })
+    .order("id", { ascending: false });
+
+  if (error) {
+    showMessage("Could not load expenses: " + error.message, true);
+    return;
+  }
+
+  expenses = data || [];
+  renderDashboard();
+}
+
+async function saveExpense(event) {
+  event.preventDefault();
+
+  const title = $("expenseTitle")?.value.trim();
+  const amount = Number($("expenseAmount")?.value);
+  const category = $("expenseCategory")?.value || "Other";
+  const expenseDate =
+    $("expenseDate")?.value ||
+    new Date().toISOString().slice(0, 10);
+  const description = $("expenseDescription")?.value.trim() || null;
+
+  if (!title) {
+    showMessage("Enter an expense name.", true);
+    return;
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    showMessage("Enter an amount greater than zero.", true);
+    return;
+  }
+
+  const { data: { user }, error: userError } =
+    await supabaseClient.auth.getUser();
+
+  if (userError || !user) {
+    showMessage("Please sign in before saving expenses.", true);
+    setSignedInUI(null);
+    return;
+  }
+
+  const expense = {
+    title,
+    amount,
+    category,
+    expense_date: expenseDate,
+    description
+  };
+
+  let result;
+
+  if (editingExpenseId !== null) {
+    result = await supabaseClient
+      .from("expenses")
+      .update(expense)
+      .eq("id", editingExpenseId)
+      .select()
+      .single();
+  } else {
+    // user_id is set by the database using auth.uid().
+    result = await supabaseClient
+      .from("expenses")
+      .insert(expense)
+      .select()
+      .single();
+  }
+
+  if (result.error) {
+    showMessage("Could not save expense: " + result.error.message, true);
+    return;
+  }
+
+  $("expenseForm")?.reset();
+  editingExpenseId = null;
+
+  const submitButton = $("expenseForm")?.querySelector(
+    'button[type="submit"]'
+  );
+  if (submitButton) submitButton.textContent = "Add Expense";
+
+  showMessage("Expense saved.");
+  await loadExpenses();
+}
+
+async function deleteExpense(id) {
+  if (!confirm("Delete this expense?")) return;
+
+  const { error } = await supabaseClient
+    .from("expenses")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    showMessage("Could not delete expense: " + error.message, true);
+    return;
+  }
+
+  showMessage("Expense deleted.");
+  await loadExpenses();
+}
+
+function editExpense(id) {
+  const expense = expenses.find((item) => String(item.id) === String(id));
+  if (!expense) return;
+
+  editingExpenseId = expense.id;
+
+  if ($("expenseTitle")) $("expenseTitle").value = expense.title;
+  if ($("expenseAmount")) $("expenseAmount").value = expense.amount;
+  if ($("expenseCategory")) $("expenseCategory").value = expense.category || "Other";
+  if ($("expenseDate")) $("expenseDate").value = expense.expense_date;
+  if ($("expenseDescription")) {
+    $("expenseDescription").value = expense.description || "";
+  }
+
+  const submitButton = $("expenseForm")?.querySelector(
+    'button[type="submit"]'
+  );
+  if (submitButton) submitButton.textContent = "Update Expense";
+
+  $("expenseForm")?.scrollIntoView({ behavior: "smooth" });
+}
+
+function renderExpenses(list = expenses) {
+  const container = $("expenseList");
+  if (!container) return;
+
+  container.replaceChildren();
+
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "No expenses found.";
+    container.appendChild(empty);
+    return;
+  }
+
+  list.forEach((expense) => {
+    const row = document.createElement("article");
+    row.className = "expense-item";
+
+    const details = document.createElement("div");
+
+    const title = document.createElement("strong");
+    title.textContent = expense.title;
+
+    const meta = document.createElement("p");
+    meta.textContent =
+      `${expense.category || "Other"} · ${expense.expense_date}` +
+      (expense.description ? ` · ${expense.description}` : "");
+
+    const amount = document.createElement("strong");
+    amount.textContent = money(expense.amount);
+
+    details.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "expense-actions";
+
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.textContent = "Edit";
+    editButton.addEventListener("click", () => editExpense(expense.id));
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => deleteExpense(expense.id));
+
+    actions.append(editButton, deleteButton);
+    row.append(details, amount, actions);
+    container.appendChild(row);
+  });
+}
+
+function renderDashboard() {
+  const total = expenses.reduce(
+    (sum, expense) => sum + Number(expense.amount || 0),
+    0
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+  const month = today.slice(0, 7);
+
+  const todayTotal = expenses
+    .filter((expense) => expense.expense_date === today)
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+
+  const monthTotal = expenses
+    .filter((expense) => expense.expense_date?.startsWith(month))
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+
+  if ($("totalExpenses")) $("totalExpenses").textContent = money(total);
+  if ($("todayExpenses")) $("todayExpenses").textContent = money(todayTotal);
+  if ($("monthlyExpenses")) $("monthlyExpenses").textContent = money(monthTotal);
+  if ($("expenseCount")) $("expenseCount").textContent = String(expenses.length);
+
+  renderExpenses(getFilteredExpenses());
+  renderCategoryTotals();
+  renderChart();
+}
+
+function getFilteredExpenses() {
+  const search = ($("searchExpenses")?.value || "").toLowerCase().trim();
+  const category = $("filterCategory")?.value || "All";
+  const month = $("filterMonth")?.value || "";
+
+  return expenses.filter((expense) => {
+    const matchesSearch =
+      expense.title.toLowerCase().includes(search) ||
+      (expense.description || "").toLowerCase().includes(search);
+
+    const matchesCategory =
+      category === "All" || expense.category === category;
+
+    const matchesMonth =
+      !month || expense.expense_date?.startsWith(month);
+
+    return matchesSearch && matchesCategory && matchesMonth;
+  });
+}
+
+function renderCategoryTotals() {
+  const container = $("categoryTotals");
+  if (!container) return;
+
+  container.replaceChildren();
+
+  const totals = {};
+  expenses.forEach((expense) => {
+    const category = expense.category || "Other";
+    totals[category] = (totals[category] || 0) + Number(expense.amount || 0);
+  });
+
+  Object.entries(totals)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([category, total]) => {
+      const row = document.createElement("p");
+      row.textContent = `${category}: ${money(total)}`;
+      container.appendChild(row);
+    });
+}
+
+function renderChart() {
+  const canvas = $("expenseChart");
+  if (!canvas || typeof canvas.getContext !== "function") return;
+
+  const ctx = canvas.getContext("2d");
+  const totals = {};
+
+  expenses.forEach((expense) => {
+    const category = expense.category || "Other";
+    totals[category] = (totals[category] || 0) + Number(expense.amount || 0);
+  });
+
+  const entries = Object.entries(totals);
+  const width = canvas.width = Math.max(canvas.clientWidth || 320, 320);
+  const height = canvas.height = 220;
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (!entries.length) {
+    ctx.fillText("Add expenses to see your chart", 12, 30);
+    return;
+  }
+
+  const max = Math.max(...entries.map((entry) => entry[1]), 1);
+  const barWidth = Math.max(24, (width - 30) / entries.length - 12);
+
+  entries.forEach(([category, amount], index) => {
+    const x = 15 + index * ((width - 30) / entries.length);
+    const barHeight = (amount / max) * 135;
+    const y = 165 - barHeight;
+
+    ctx.fillStyle = "#4f46e5";
+    ctx.fillRect(x, y, barWidth, barHeight);
+
+    ctx.fillStyle = "#222";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(category.slice(0, 10), x, 185);
+    ctx.fillText(money(amount).slice(0, 12), x, Math.max(12, y - 6));
+  });
+}
+
+function addQuickCash(amount) {
+  if ($("expenseAmount")) $("expenseAmount").value = amount;
+  $("expenseTitle")?.focus();
+}
+
+function startVoiceInput() {
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    showMessage("Voice input is not supported in this browser.", true);
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-IN";
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => {
+    const spoken = event.results[0][0].transcript;
+    if ($("expenseTitle")) $("expenseTitle").value = spoken;
+  };
+
+  recognition.onerror = () => {
+    showMessage("Voice input could not be completed.", true);
+  };
+
+  recognition.start();
+}
+
+function connectUI() {
+  $("signUpButton")?.addEventListener("click", signUp);
+  $("signInButton")?.addEventListener("click", signIn);
+  $("signOutButton")?.addEventListener("click", signOut);
+  $("expenseForm")?.addEventListener("submit", saveExpense);
+
+  $("searchExpenses")?.addEventListener("input", () => {
+    renderExpenses(getFilteredExpenses());
+  });
+
+  $("filterCategory")?.addEventListener("change", () => {
+    renderExpenses(getFilteredExpenses());
+  });
+
+  $("filterMonth")?.addEventListener("change", () => {
+    renderExpenses(getFilteredExpenses());
+  });
+
+  $("voiceButton")?.addEventListener("click", startVoiceInput);
+
+  document.querySelectorAll("[data-quick-cash]").forEach((button) => {
+    button.addEventListener("click", () => {
+      addQuickCash(Number(button.dataset.quickCash));
+    });
+  });
+}
+
+async function initializeApp() {
+  connectUI();
+
+  const { data: { session }, error } =
+    await supabaseClient.auth.getSession();
+
+  if (error) showMessage(error.message, true);
+
+  if (session?.user) {
+    setSignedInUI(session.user);
+    await loadExpenses();
+  } else {
+    setSignedInUI(null);
+    renderDashboard();
+  }
+
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) {
+      setSignedInUI(session.user);
+      setTimeout(() => loadExpenses(), 0);
+    } else {
+      expenses = [];
+      setSignedInUI(null);
+      renderDashboard();
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", initializeApp);
+```
