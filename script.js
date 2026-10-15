@@ -37,14 +37,7 @@ const allExpenseList = $("allExpenseList");
 const allExpensesSection = $("allExpensesSection");
 const chartCanvas = $("expenseChart");
 
-if (!form || !expenseList || !allExpenseList ||
-    !allExpensesSection || !chartCanvas) {
-    throw new Error(
-        "PennyPilot could not find required HTML elements. Check index.html."
-    );
-}
-
-const chartContext = chartCanvas.getContext("2d");
+const chartContext = chartCanvas ? chartCanvas.getContext("2d") : null;
 
 let expenses = [];
 
@@ -61,17 +54,12 @@ function currentMonthKey() {
 
 function todayIsoDate() {
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-
-    return `${year}-${month}-${day}`;
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function showMessage(message, isError = false) {
-    const element = $("formMessage");
+    const element = $("formMessage") || $("appMessage");
     if (!element) return;
-
     element.textContent = message;
     element.style.color = isError ? "#b84040" : "#286b50";
 }
@@ -79,7 +67,6 @@ function showMessage(message, isError = false) {
 function showQuickCashMessage(message, isError = false) {
     const element = $("quickCashMessage");
     if (!element) return;
-
     element.textContent = message;
     element.style.color = isError ? "#b84040" : "#286b50";
 }
@@ -151,7 +138,6 @@ function addExpenseToStorage(expense) {
 
     expenses.push(newExpense);
     saveExpensesToStorage();
-
     return newExpense;
 }
 
@@ -166,9 +152,7 @@ function deleteExpense(id) {
 }
 
 function getMonthlyExpenses() {
-    const month = currentMonthKey();
-
-    return expenses.filter(expense => expense.monthKey === month);
+    return expenses.filter(expense => expense.monthKey === currentMonthKey());
 }
 
 function getTotals() {
@@ -179,11 +163,8 @@ function getTotals() {
     );
 
     monthlyExpenses.forEach(expense => {
-        if (totals[expense.category] === undefined) {
-            totals[expense.category] = 0;
-        }
-
-        totals[expense.category] += expense.amount;
+        totals[expense.category] =
+            (totals[expense.category] || 0) + expense.amount;
     });
 
     const spent = monthlyExpenses.reduce(
@@ -211,13 +192,8 @@ function renderSummary(data) {
         });
     }
 
-    if ($("budget")) {
-        $("budget").textContent = formatMoney(MONTHLY_BUDGET);
-    }
-
-    if ($("totalSpent")) {
-        $("totalSpent").textContent = formatMoney(data.spent);
-    }
+    if ($("budget")) $("budget").textContent = formatMoney(MONTHLY_BUDGET);
+    if ($("totalSpent")) $("totalSpent").textContent = formatMoney(data.spent);
 
     if ($("remaining")) {
         $("remaining").textContent = formatMoney(data.remaining);
@@ -244,11 +220,7 @@ function renderSummary(data) {
 
     if ($("progressCaption")) {
         $("progressCaption").textContent =
-            `${formatMoney(data.spent)} spent · ` +
-            `${formatMoney(data.remaining)} remaining`;
-
-        $("progressCaption").style.color =
-            data.percent > 100 ? "#b84040" : "#7b8981";
+            `${formatMoney(data.spent)} spent · ${formatMoney(data.remaining)} remaining`;
 
         if (data.percent > 100) {
             $("progressCaption").textContent += " · Budget exceeded!";
@@ -257,25 +229,21 @@ function renderSummary(data) {
 }
 
 function renderChart(data) {
-    const rect = chartCanvas.getBoundingClientRect();
+    if (!chartCanvas || !chartContext) return;
 
+    const rect = chartCanvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
     chartCanvas.width = Math.round(rect.width * dpr);
     chartCanvas.height = Math.round(rect.height * dpr);
 
     const ctx = chartContext;
-
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
 
     const total = data.spent;
-
-    if ($("chartTotal")) {
-        $("chartTotal").textContent = formatMoney(total);
-    }
+    if ($("chartTotal")) $("chartTotal").textContent = formatMoney(total);
 
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
@@ -290,10 +258,9 @@ function renderChart(data) {
         ctx.stroke();
 
         if ($("categoryLegend")) {
-            $("categoryLegend").innerHTML =
-                '<p class="muted">Add expenses to see your category percentages.</p>';
+            $("categoryLegend").textContent =
+                "Add expenses to see your category percentages.";
         }
-
         return;
     }
 
@@ -310,17 +277,9 @@ function renderChart(data) {
 
         if (drawEnd > drawStart) {
             ctx.beginPath();
-            ctx.arc(
-                centerX,
-                centerY,
-                radius,
-                drawStart,
-                drawEnd
-            );
-
+            ctx.arc(centerX, centerY, radius, drawStart, drawEnd);
             ctx.strokeStyle = CHART_COLORS[index % CHART_COLORS.length];
             ctx.lineWidth = thickness;
-            ctx.lineCap = "butt";
             ctx.stroke();
         }
 
@@ -336,15 +295,13 @@ function renderChart(data) {
         .forEach(category => {
             const index = CATEGORIES.indexOf(category);
             const amount = data.totals[category];
-            const percent = (amount / total) * 100;
 
             const row = document.createElement("div");
             row.className = "legend-item";
 
             const dot = document.createElement("span");
             dot.className = "legend-dot";
-            dot.style.backgroundColor =
-                CHART_COLORS[index % CHART_COLORS.length];
+            dot.style.backgroundColor = CHART_COLORS[index];
 
             const name = document.createElement("span");
             name.className = "legend-name";
@@ -356,7 +313,8 @@ function renderChart(data) {
 
             const percentage = document.createElement("span");
             percentage.className = "legend-percent";
-            percentage.textContent = `${percent.toFixed(1)}% of spending`;
+            percentage.textContent =
+                `${((amount / total) * 100).toFixed(1)}% of spending`;
 
             value.appendChild(percentage);
             row.append(dot, name, value);
@@ -401,63 +359,40 @@ function renderInsights(data) {
 
     if (data.spent === 0) {
         addInsight(
-            container,
-            "✦",
-            "Your smart insights start here",
-            "Add your expenses to see your biggest spending category and personalized saving suggestions."
+            container, "✦", "Your smart insights start here",
+            "Add your expenses to see your biggest spending category and saving suggestions."
         );
         return;
     }
 
     const highest = items[0];
-    const highestPercent = (highest.amount / data.spent) * 100;
 
     addInsight(
-        container,
-        "↗",
-        `${highest.category} is your top category`,
-        `You've spent ${formatMoney(highest.amount)} on ${highest.category}, which is ${highestPercent.toFixed(1)}% of your recorded spending.`
+        container, "↗", `${highest.category} is your top category`,
+        `You've spent ${formatMoney(highest.amount)} on ${highest.category}, which is ${((highest.amount / data.spent) * 100).toFixed(1)}% of your recorded spending.`
     );
 
     const flexibleCategories = ["Food", "Shopping", "Travel", "Other"];
-
     const flexibleTotal = items
         .filter(item => flexibleCategories.includes(item.category))
         .reduce((sum, item) => sum + item.amount, 0);
 
     if (flexibleTotal > 0) {
         addInsight(
-            container,
-            "₹",
-            "Try a 10% savings goal",
-            `A 10% reduction in flexible spending would save about ${formatMoney(flexibleTotal * 0.10)}. This is a target, not guaranteed savings.`
+            container, "₹", "Try a 10% savings goal",
+            `A 10% reduction in flexible spending would save about ${formatMoney(flexibleTotal * 0.10)}.`
         );
     }
 
     if (data.remaining < 0) {
         addInsight(
-            container,
-            "!",
-            "You've exceeded your budget",
-            `You are ${formatMoney(Math.abs(data.remaining))} over your monthly budget. Review flexible expenses.`
+            container, "!", "You've exceeded your budget",
+            `You are ${formatMoney(Math.abs(data.remaining))} over your monthly budget.`
         );
     } else {
         addInsight(
-            container,
-            "✓",
-            `${((data.remaining / MONTHLY_BUDGET) * 100).toFixed(1)}% of budget remains`,
+            container, "✓", "Budget remaining",
             `You have ${formatMoney(data.remaining)} left from your monthly budget of ${formatMoney(MONTHLY_BUDGET)}.`
-        );
-    }
-
-    const shopping = data.totals.Shopping || 0;
-
-    if (shopping > 0) {
-        addInsight(
-            container,
-            "◇",
-            "Review shopping expenses",
-            `Your recorded shopping total is ${formatMoney(shopping)}. Check for unnecessary purchases.`
         );
     }
 }
@@ -485,14 +420,10 @@ function makeTransaction(expense) {
     deleteButton.type = "button";
     deleteButton.className = "delete-button";
     deleteButton.textContent = "Delete";
-    deleteButton.setAttribute("aria-label", `Delete ${expense.name}`);
 
-    deleteButton.addEventListener("click", () => {
-        deleteExpense(expense.id);
-    });
+    deleteButton.addEventListener("click", () => deleteExpense(expense.id));
 
     row.append(details, amount, deleteButton);
-
     return row;
 }
 
@@ -509,21 +440,15 @@ function renderExpenseList(container, list, emptyMessage) {
         return;
     }
 
-    list.forEach(expense => {
-        container.appendChild(makeTransaction(expense));
-    });
+    list.forEach(expense => container.appendChild(makeTransaction(expense)));
 }
 
 function renderTransactions() {
     const data = getTotals();
 
-    const recent = [...data.monthlyExpenses]
-        .reverse()
-        .slice(0, 5);
-
     renderExpenseList(
         expenseList,
-        recent,
+        [...data.monthlyExpenses].reverse().slice(0, 5),
         "No expenses recorded this month. Add your first one!"
     );
 
@@ -536,7 +461,6 @@ function renderTransactions() {
 
 function renderDashboard() {
     const data = getTotals();
-
     renderSummary(data);
     renderChart(data);
     renderInsights(data);
@@ -544,13 +468,10 @@ function renderDashboard() {
 }
 
 function openAllExpenses() {
-    allExpensesSection.hidden = false;
+    if (!allExpensesSection) return;
 
-    renderExpenseList(
-        allExpenseList,
-        [...expenses].reverse(),
-        "No expenses recorded yet."
-    );
+    allExpensesSection.hidden = false;
+    renderExpenseList(allExpenseList, [...expenses].reverse(), "No expenses recorded yet.");
 
     allExpensesSection.scrollIntoView({
         behavior: "smooth",
@@ -558,77 +479,52 @@ function openAllExpenses() {
     });
 }
 
-// Add an expense from the main form.
-form.addEventListener("submit", event => {
-    event.preventDefault();
+if (form) {
+    form.addEventListener("submit", event => {
+        event.preventDefault();
 
-    const name = $("expenseName").value.trim();
-    const amount = Number($("expenseAmount").value);
-    const category = $("expenseCategory").value;
+        const nameField = $("expenseName") || $("expenseTitle");
+        const name = nameField ? nameField.value.trim() : "";
+        const amount = Number($("expenseAmount")?.value);
+        const category = $("expenseCategory")?.value;
 
-    if (!name || !Number.isFinite(amount) ||
-        amount <= 0 || amount > 100000000) {
-        showMessage("Enter a valid name and amount.", true);
-        return;
-    }
+        if (!name || !Number.isFinite(amount) || amount <= 0) {
+            showMessage("Enter a valid name and amount.", true);
+            return;
+        }
 
-    if (!CATEGORIES.includes(category)) {
-        showMessage("Please select a valid category.", true);
-        return;
-    }
+        if (!CATEGORIES.includes(category)) {
+            showMessage("Please select a valid category.", true);
+            return;
+        }
 
-    try {
-        addExpenseToStorage({ name, amount, category });
-        form.reset();
-
-        showMessage("Expense added successfully!");
-        renderDashboard();
-    } catch (error) {
-        console.error("PennyPilot save error:", error);
-        showMessage("Could not save expense in this browser.", true);
-    }
-});
-
-if ($("totalCard")) {
-    $("totalCard").addEventListener("click", openAllExpenses);
-}
-
-if ($("viewAllButton")) {
-    $("viewAllButton").addEventListener("click", openAllExpenses);
-}
-
-if ($("closeAllButton")) {
-    $("closeAllButton").addEventListener("click", () => {
-        allExpensesSection.hidden = true;
+        try {
+            addExpenseToStorage({ name, amount, category });
+            form.reset();
+            showMessage("Expense added successfully!");
+            renderDashboard();
+        } catch (error) {
+            console.error("PennyPilot save error:", error);
+            showMessage("Could not save expense in this browser.", true);
+        }
     });
 }
 
-window.addEventListener("resize", () => {
-    renderChart(getTotals());
-});
+if ($("totalCard")) $("totalCard").addEventListener("click", openAllExpenses);
+if ($("viewAllButton")) $("viewAllButton").addEventListener("click", openAllExpenses);
 
-// QUICK CASH FEATURE
+if ($("closeAllButton")) {
+    $("closeAllButton").addEventListener("click", () => {
+        if (allExpensesSection) allExpensesSection.hidden = true;
+    });
+}
 
+window.addEventListener("resize", () => renderChart(getTotals()));
+
+// QUICK CASH - original controls
 const quickCashAmount = $("quickCashAmount");
 const quickCashName = $("quickCashName");
 const quickCashCategory = $("quickCashCategory");
-
-[
-    $("expenseCategory"),
-    quickCashCategory
-].forEach(selectElement => {
-    if (
-        selectElement &&
-        !Array.from(selectElement.options).some(
-            option => option.value === "Other"
-        )
-    ) {
-        const option = document.createElement("option");
-        option.value = "Other";
-        option.textContent = "Other";
-        selectElement.appendChild(option);
-    }
-});
 
 document.querySelectorAll(".cash-amount-button").forEach(button => {
     button.addEventListener("click", () => {
@@ -636,36 +532,18 @@ document.querySelectorAll(".cash-amount-button").forEach(button => {
             quickCashAmount.value = button.dataset.cashAmount;
             quickCashAmount.focus();
         }
-
-        if ($("quickCashMessage")) {
-            $("quickCashMessage").textContent = "";
-        }
+        if ($("quickCashMessage")) $("quickCashMessage").textContent = "";
     });
 });
 
 if ($("addQuickCashButton")) {
     $("addQuickCashButton").addEventListener("click", () => {
-        const name = quickCashName ? quickCashName.value.trim() : "";
-        const amount = Number(
-            quickCashAmount ? quickCashAmount.value : ""
-        );
-        const category = quickCashCategory
-            ? quickCashCategory.value
-            : "";
+        const name = quickCashName?.value.trim() || "";
+        const amount = Number(quickCashAmount?.value);
+        const category = quickCashCategory?.value || "";
 
-        if (!name) {
-            showQuickCashMessage(
-                "Please enter what you spent money on.",
-                true
-            );
-            if (quickCashName) quickCashName.focus();
-            return;
-        }
-
-        if (!Number.isFinite(amount) ||
-            amount <= 0 || amount > 100000000) {
-            showQuickCashMessage("Please enter a valid amount.", true);
-            if (quickCashAmount) quickCashAmount.focus();
+        if (!name || !Number.isFinite(amount) || amount <= 0) {
+            showQuickCashMessage("Enter an expense name and a valid amount.", true);
             return;
         }
 
@@ -674,23 +552,35 @@ if ($("addQuickCashButton")) {
             return;
         }
 
-        try {
-            addExpenseToStorage({ name, amount, category });
-
-            if (quickCashName) quickCashName.value = "";
-            if (quickCashAmount) quickCashAmount.value = "";
-
-            showQuickCashMessage("Cash expense added successfully!");
-            renderDashboard();
-        } catch (error) {
-            console.error("PennyPilot Quick Cash error:", error);
-            showQuickCashMessage("Could not save expense.", true);
-        }
+        addExpenseToStorage({ name, amount, category });
+        if (quickCashName) quickCashName.value = "";
+        if (quickCashAmount) quickCashAmount.value = "";
+        showQuickCashMessage("Cash expense added successfully!");
+        renderDashboard();
     });
 }
 
-// VOICE EXPENSE FEATURE
+// Compatibility with newer HTML Quick Add buttons
+document.querySelectorAll("[data-quick-cash]").forEach(button => {
+    button.addEventListener("click", () => {
+        const titleField = $("expenseTitle") || $("expenseName");
+        const amountField = $("expenseAmount");
 
+        if (amountField) amountField.value = button.dataset.quickCash;
+        if (titleField && !titleField.value.trim()) titleField.value = "Quick expense";
+        if ($("expenseCategory") && !$("expenseCategory").value) {
+            $("expenseCategory").value = "Other";
+        }
+        if ($("expenseDate") && !$("expenseDate").value) {
+            $("expenseDate").value = todayIsoDate();
+        }
+
+        if (titleField) titleField.focus();
+        showMessage("Amount filled in. Complete the expense form and submit.");
+    });
+});
+
+// VOICE EXPENSE FEATURE
 (() => {
     const voiceButton = $("voiceButton");
     const voiceMessage = $("voiceMessage");
@@ -699,13 +589,10 @@ if ($("addQuickCashButton")) {
     const categoryInput = $("quickCashCategory");
 
     if (!voiceButton || !voiceMessage || !nameInput ||
-        !amountInput || !categoryInput) {
-        return;
-    }
+        !amountInput || !categoryInput) return;
 
     const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
+        window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
         voiceButton.disabled = true;
@@ -715,7 +602,6 @@ if ($("addQuickCashButton")) {
     }
 
     const recognition = new SpeechRecognition();
-
     recognition.lang = "en-IN";
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -726,60 +612,34 @@ if ($("addQuickCashButton")) {
     function guessCategory(name) {
         const text = name.toLowerCase();
 
-        if (/\b(tea|coffee|food|lunch|dinner|breakfast|snack|snacks|pizza|meal|restaurant|juice|water)\b/.test(text)) {
-            return "Food";
-        }
-
-        if (/\b(bus|train|metro|auto|taxi|cab|petrol|fuel|travel|parking)\b/.test(text)) {
-            return "Travel";
-        }
-
-        if (/\b(shopping|clothes|shirt|shoes|dress|bag)\b/.test(text)) {
-            return "Shopping";
-        }
-
-        if (/\b(bill|electricity|recharge|internet|mobile bill)\b/.test(text)) {
-            return "Bills";
-        }
-
-        if (/\b(book|books|course|college|school|education|tuition)\b/.test(text)) {
-            return "Education";
-        }
-
-        if (/\b(doctor|medicine|medical|hospital|health)\b/.test(text)) {
-            return "Health";
-        }
+        if (/\b(tea|coffee|food|lunch|dinner|breakfast|snack|pizza|meal|restaurant|juice|water)\b/.test(text)) return "Food";
+        if (/\b(bus|train|metro|auto|taxi|cab|petrol|fuel|travel|parking)\b/.test(text)) return "Travel";
+        if (/\b(shopping|clothes|shirt|shoes|dress|bag)\b/.test(text)) return "Shopping";
+        if (/\b(bill|electricity|recharge|internet|mobile bill)\b/.test(text)) return "Bills";
+        if (/\b(book|books|course|college|school|education|tuition)\b/.test(text)) return "Education";
+        if (/\b(doctor|medicine|medical|hospital|health)\b/.test(text)) return "Health";
 
         return "Other";
     }
 
     function parseExpense(transcript) {
-        const spokenText = transcript.trim();
-
-        const amountMatch = spokenText.match(
+        const amountMatch = transcript.trim().match(
             /(?:₹\s*|rs\.?\s*|rupees?\s*)?(\d+(?:\.\d+)?)(?:\s*rupees?)?/i
         );
 
         if (!amountMatch) return null;
 
         const amount = Number(amountMatch[1]);
+        if (!Number.isFinite(amount) || amount <= 0) return null;
 
-        if (!Number.isFinite(amount) || amount <= 0) {
-            return null;
-        }
-
-        let name = spokenText
+        let name = transcript.trim()
             .replace(amountMatch[0], " ")
-            .replace(
-                /\b(i\s+)?(spent|spend|paid|pay|bought|buy|purchased|purchase|for|on|rupees?|rs)\b/gi,
-                " "
-            )
+            .replace(/\b(i\s+)?(spent|spend|paid|pay|bought|buy|purchased|purchase|for|on|rupees?|rs)\b/gi, " ")
             .replace(/[₹,]/g, " ")
             .replace(/\s+/g, " ")
             .trim();
 
         name = name.replace(/^(a|an|the)\s+/i, "").trim();
-
         if (!name) return null;
 
         return {
@@ -795,10 +655,7 @@ if ($("addQuickCashButton")) {
             return;
         }
 
-        voiceMessage.textContent =
-            "Listening... Say, for example, 'Spent 20 rupees on tea'.";
-        voiceMessage.style.color = "#286b50";
-
+        voiceMessage.textContent = "Listening... Say, for example, 'Spent 20 rupees on tea'.";
         isListening = true;
         voiceButton.disabled = true;
 
@@ -807,9 +664,7 @@ if ($("addQuickCashButton")) {
         } catch (error) {
             isListening = false;
             voiceButton.disabled = false;
-            voiceMessage.textContent =
-                "Could not start the microphone. Please try again.";
-            console.error("PennyPilot voice error:", error);
+            voiceMessage.textContent = "Could not start the microphone. Please try again.";
         }
     });
 
@@ -819,8 +674,7 @@ if ($("addQuickCashButton")) {
 
         if (!expense) {
             voiceMessage.textContent =
-                `I heard "${transcript}", but couldn't find both an amount and an expense name. Please try again.`;
-            voiceMessage.style.color = "#b45309";
+                `I heard "${transcript}", but couldn't find both an amount and an expense name.`;
             return;
         }
 
@@ -829,26 +683,13 @@ if ($("addQuickCashButton")) {
         categoryInput.value = expense.category;
 
         voiceMessage.textContent =
-            `Heard: "${transcript}". Check the fields, then click Add Cash Expense.`;
-        voiceMessage.style.color = "#286b50";
+            `Heard "${transcript}". Check the fields, then click Add Cash Expense.`;
     };
 
     recognition.onerror = event => {
-        if (
-            event.error === "not-allowed" ||
-            event.error === "service-not-allowed"
-        ) {
-            voiceMessage.textContent =
-                "Microphone access was blocked. Allow microphone access in your browser settings.";
-        } else if (event.error === "no-speech") {
-            voiceMessage.textContent =
-                "I didn't hear anything. Click the microphone and try again.";
-        } else {
-            voiceMessage.textContent =
-                `Voice recognition issue: ${event.error}. Please try again.`;
-        }
-
-        voiceMessage.style.color = "#b45309";
+        voiceMessage.textContent = event.error === "not-allowed"
+            ? "Microphone access was blocked. Allow microphone access in browser settings."
+            : `Voice recognition issue: ${event.error}. Please try again.`;
     };
 
     recognition.onend = () => {
@@ -857,7 +698,160 @@ if ($("addQuickCashButton")) {
     };
 })();
 
-// START THE DASHBOARD
+// SUPABASE AUTHENTICATION ADD-ON
+(() => {
+    const authSection = $("authSection");
+    const appSection = $("appSection");
+    const emailField = $("authEmail");
+    const passwordField = $("authPassword");
+    const signUpButton = $("signUpButton");
+    const signInButton = $("signInButton");
+    const signOutButton = $("signOutButton");
+    const message = $("appMessage");
 
+    // Don't affect the original dashboard if this page has no auth section.
+    if (!authSection || !appSection || !emailField || !passwordField ||
+        !signUpButton || !signInButton || !signOutButton) return;
+
+    const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_eHuDa1uoMvWdv-hqAWYviA_YrnQoBhg";
+
+    function authMessage(text, isError = false) {
+        if (!message) {
+            alert(text);
+            return;
+        }
+        message.textContent = text;
+        message.style.color = isError ? "#b84040" : "#286b50";
+    }
+
+    function showSignedOut() {
+        authSection.hidden = false;
+        appSection.hidden = true;
+    }
+
+    function showSignedIn(user) {
+        authSection.hidden = true;
+        appSection.hidden = false;
+
+        if ($("userEmail")) {
+            $("userEmail").textContent = user?.email || "";
+        }
+
+        renderDashboard();
+    }
+
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
+        authMessage("Supabase library did not load. Check index.html.", true);
+        return;
+    }
+
+    const supabaseClient = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY
+    );
+
+    signUpButton.addEventListener("click", async () => {
+        const email = emailField.value.trim();
+        const password = passwordField.value;
+
+        if (!email || !password) {
+            authMessage("Enter your email and password.", true);
+            return;
+        }
+
+        if (password.length < 6) {
+            authMessage("Password must contain at least 6 characters.", true);
+            return;
+        }
+
+        signUpButton.disabled = true;
+        authMessage("Creating your account...");
+
+        try {
+            const { data, error } = await supabaseClient.auth.signUp({
+                email,
+                password
+            });
+
+            if (error) throw error;
+
+            if (data.session && data.user) {
+                authMessage("Account created successfully.");
+                showSignedIn(data.user);
+            } else {
+                authMessage(
+                    "Account created. Check your email for confirmation, then sign in."
+                );
+            }
+        } catch (error) {
+            authMessage(error.message || "Could not create account.", true);
+        } finally {
+            signUpButton.disabled = false;
+        }
+    });
+
+    signInButton.addEventListener("click", async () => {
+        const email = emailField.value.trim();
+        const password = passwordField.value;
+
+        if (!email || !password) {
+            authMessage("Enter your email and password.", true);
+            return;
+        }
+
+        signInButton.disabled = true;
+        authMessage("Signing in...");
+
+        try {
+            const { data, error } =
+                await supabaseClient.auth.signInWithPassword({
+                    email,
+                    password
+                });
+
+            if (error) throw error;
+
+            authMessage("Signed in successfully.");
+            showSignedIn(data.user);
+        } catch (error) {
+            authMessage(error.message || "Could not sign in.", true);
+        } finally {
+            signInButton.disabled = false;
+        }
+    });
+
+    signOutButton.addEventListener("click", async () => {
+        signOutButton.disabled = true;
+
+        try {
+            const { error } = await supabaseClient.auth.signOut();
+            if (error) throw error;
+
+            showSignedOut();
+            authMessage("You have signed out.");
+        } catch (error) {
+            authMessage(error.message || "Could not sign out.", true);
+        } finally {
+            signOutButton.disabled = false;
+        }
+    });
+
+    supabaseClient.auth.getSession().then(({ data, error }) => {
+        if (error) {
+            showSignedOut();
+            authMessage(error.message || "Could not check session.", true);
+            return;
+        }
+
+        if (data.session) {
+            showSignedIn(data.session.user);
+        } else {
+            showSignedOut();
+        }
+    });
+})();
+
+// START THE DASHBOARD
 loadExpensesFromStorage();
 renderDashboard();
