@@ -2,146 +2,372 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PennyPilot - Smart Expense Tracker</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="description"
+        content="PennyPilot - Smart Expense Tracker. Manage your expenses, track spending, and understand your budget."
+    >
+
+    <title>PennyPilot - Smart Expense Tracker</title>
+
+    <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-  <header>
-    <h1>💰 PennyPilot</h1>
-    <p>Your money, made simple.</p>
-  </header>
+    <header>
+        <h1>💰 PennyPilot</h1>
+        <p>Your money, made simple.</p>
+    </header>
 
-  <main>
-    <section id="authSection">
-      <h2>Welcome to PennyPilot</h2>
-      <p>Sign in or create an account to manage your expenses.</p>
+    <main>
+        <!-- Shared message area: visible during sign-in and while using the app -->
+        <p
+            id="appMessage"
+            role="status"
+            aria-live="polite"
+        ></p>
 
-      <label for="authEmail">Email address</label>
-      <input id="authEmail" type="email" placeholder="Enter your email" required>
+        <!-- AUTHENTICATION -->
+        <section id="authSection">
+            <h2>Welcome to PennyPilot</h2>
 
-      <label for="authPassword">Password</label>
-      <input id="authPassword" type="password" placeholder="Enter password" required>
+            <p>
+                Sign in or create an account to manage your expenses.
+            </p>
 
-      <button id="signInButton" type="button">Sign In</button>
-      <button id="signUpButton" type="button">Create Account</button>
-    </section>
+            <form id="authForm">
+                <label for="authEmail">Email address</label>
 
-    <section id="appSection" hidden>
-      <div>
-        <span>Signed in as </span>
-        <strong id="userEmail"></strong>
-        <button id="signOutButton" type="button">Sign Out</button>
-      </div>
+                <input
+                    id="authEmail"
+                    name="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    autocomplete="email"
+                    required
+                >
 
-      <p id="appMessage" role="status"></p>
+                <label for="authPassword">Password</label>
 
-      <h2>Your Dashboard</h2>
+                <input
+                    id="authPassword"
+                    name="password"
+                    type="password"
+                    placeholder="Enter password"
+                    autocomplete="current-password"
+                    minlength="6"
+                    required
+                >
 
-      <section class="summary">
-        <article>
-          <h3>Total Expenses</h3>
-          <p id="totalExpenses">₹0.00</p>
-        </article>
-        <article>
-          <h3>Today's Expenses</h3>
-          <p id="todayExpenses">₹0.00</p>
-        </article>
-        <article>
-          <h3>This Month</h3>
-          <p id="monthlyExpenses">₹0.00</p>
-        </article>
-        <article>
-          <h3>Number of Expenses</h3>
-          <p id="expenseCount">0</p>
-        </article>
-      </section>
+                <button
+                    id="signInButton"
+                    type="button"
+                >
+                    Sign In
+                </button>
 
-      <section>
-        <h2>Add an Expense</h2>
+                <button
+                    id="signUpButton"
+                    type="button"
+                >
+                    Create Account
+                </button>
+            </form>
+        </section>
 
-        <form id="expenseForm">
-          <label for="expenseTitle">Expense name</label>
-          <input id="expenseTitle" type="text" placeholder="e.g. Lunch" required>
+        <!-- MAIN APPLICATION -->
+        <section id="appSection" hidden>
+            <div class="user-bar">
+                <span>Signed in as </span>
 
-          <label for="expenseAmount">Amount (₹)</label>
-          <input id="expenseAmount" type="number" min="0.01" step="0.01" placeholder="0.00" required>
+                <strong id="userEmail"></strong>
 
-          <label for="expenseCategory">Category</label>
-          <select id="expenseCategory" required>
-            <option value="">Choose category</option>
-            <option value="Food">Food</option>
-            <option value="Transport">Transport</option>
-            <option value="Shopping">Shopping</option>
-            <option value="Education">Education</option>
-            <option value="Bills">Bills</option>
-            <option value="Health">Health</option>
-            <option value="Entertainment">Entertainment</option>
-            <option value="Other">Other</option>
-          </select>
+                <button
+                    id="signOutButton"
+                    type="button"
+                >
+                    Sign Out
+                </button>
+            </div>
 
-          <label for="expenseDate">Date</label>
-          <input id="expenseDate" type="date" required>
+            <h2>Your Dashboard</h2>
 
-          <label for="expenseDescription">Description (optional)</label>
-          <textarea id="expenseDescription" placeholder="Add a note"></textarea>
+            <!-- SUMMARY CARDS -->
+            <section class="summary" aria-label="Expense summary">
+                <article>
+                    <h3>Total Expenses</h3>
+                    <p id="totalExpenses">₹0.00</p>
+                </article>
 
-          <button type="submit">Add Expense</button>
-        </form>
-      </section>
+                <article>
+                    <h3>Today's Expenses</h3>
+                    <p id="todayExpenses">₹0.00</p>
+                </article>
 
-      <section>
-        <h2>Quick Add</h2>
-        <button type="button" data-quick-cash="50">₹50</button>
-        <button type="button" data-quick-cash="100">₹100</button>
-        <button type="button" data-quick-cash="200">₹200</button>
-        <button type="button" data-quick-cash="500">₹500</button>
-        <button id="voiceButton" type="button">🎤 Voice Expense</button>
-      </section>
+                <article>
+                    <h3>This Month</h3>
+                    <p id="monthlyExpenses">₹0.00</p>
+                </article>
 
-      <section>
-        <h2>Expense History</h2>
+                <article>
+                    <h3>Number of Expenses</h3>
+                    <p id="expenseCount">0</p>
+                </article>
+            </section>
 
-        <label for="searchExpenses">Search expenses</label>
-        <input id="searchExpenses" type="search" placeholder="Search by name">
+            <!-- BUDGET -->
+            <section id="budgetSection">
+                <h2>Monthly Budget</h2>
 
-        <label for="filterCategory">Filter by category</label>
-        <select id="filterCategory">
-          <option value="">All categories</option>
-          <option value="Food">Food</option>
-          <option value="Transport">Transport</option>
-          <option value="Shopping">Shopping</option>
-          <option value="Education">Education</option>
-          <option value="Bills">Bills</option>
-          <option value="Health">Health</option>
-          <option value="Entertainment">Entertainment</option>
-          <option value="Other">Other</option>
-        </select>
+                <p>
+                    Monthly budget:
+                    <strong>₹10,000</strong>
+                </p>
 
-        <label for="filterMonth">Filter by month</label>
-        <input id="filterMonth" type="month">
+                <p>
+                    Remaining budget:
+                    <strong id="budgetRemaining">₹10,000.00</strong>
+                </p>
 
-        <div id="expenseList"></div>
-      </section>
+                <div
+                    class="budget-track"
+                    role="progressbar"
+                    aria-label="Monthly budget used"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                    id="budgetProgressTrack"
+                >
+                    <div
+                        id="budgetProgress"
+                        class="budget-progress"
+                        style="width: 0%;"
+                    ></div>
+                </div>
 
-      <section>
-        <h2>Spending by Category</h2>
-        <div id="categoryTotals"></div>
-      </section>
+                <p id="budgetMessage">
+                    Your monthly budget information will appear here.
+                </p>
+            </section>
 
-      <section>
-        <h2>Expense Chart</h2>
-        <canvas id="expenseChart" height="250"></canvas>
-      </section>
-    </section>
-  </main>
+            <!-- ADD EXPENSE -->
+            <section id="addExpenseSection">
+                <h2>Add an Expense</h2>
 
-  <footer>
-    <p>Made with 💚 PennyPilot</p>
-  </footer>
+                <form id="expenseForm">
+                    <label for="expenseTitle">
+                        Expense name
+                    </label>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="script.js"></script>
+                    <input
+                        id="expenseTitle"
+                        name="title"
+                        type="text"
+                        placeholder="e.g. Lunch"
+                        maxlength="150"
+                        required
+                    >
+
+                    <label for="expenseAmount">
+                        Amount (₹)
+                    </label>
+
+                    <input
+                        id="expenseAmount"
+                        name="amount"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                        required
+                    >
+
+                    <label for="expenseCategory">
+                        Category
+                    </label>
+
+                    <select
+                        id="expenseCategory"
+                        name="category"
+                        required
+                    >
+                        <option value="">Choose category</option>
+                        <option value="Food">Food</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Education">Education</option>
+                        <option value="Bills">Bills</option>
+                        <option value="Health">Health</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Other">Other</option>
+                    </select>
+
+                    <label for="expenseDate">
+                        Date
+                    </label>
+
+                    <input
+                        id="expenseDate"
+                        name="expense_date"
+                        type="date"
+                        required
+                    >
+
+                    <label for="expenseDescription">
+                        Description (optional)
+                    </label>
+
+                    <textarea
+                        id="expenseDescription"
+                        name="description"
+                        placeholder="Add a note"
+                        rows="3"
+                        maxlength="1000"
+                    ></textarea>
+
+                    <button type="submit">
+                        Add Expense
+                    </button>
+                </form>
+            </section>
+
+            <!-- QUICK ADD -->
+            <section id="quickAddSection">
+                <h2>Quick Add</h2>
+
+                <p>Select an amount to fill in the expense form.</p>
+
+                <button
+                    type="button"
+                    data-quick-cash="50"
+                >
+                    ₹50
+                </button>
+
+                <button
+                    type="button"
+                    data-quick-cash="100"
+                >
+                    ₹100
+                </button>
+
+                <button
+                    type="button"
+                    data-quick-cash="200"
+                >
+                    ₹200
+                </button>
+
+                <button
+                    type="button"
+                    data-quick-cash="500"
+                >
+                    ₹500
+                </button>
+
+                <div>
+                    <button
+                        id="voiceButton"
+                        type="button"
+                    >
+                        🎤 Voice Expense
+                    </button>
+
+                    <p
+                        id="voiceMessage"
+                        role="status"
+                        aria-live="polite"
+                    ></p>
+                </div>
+            </section>
+
+            <!-- EXPENSE HISTORY -->
+            <section id="expenseHistorySection">
+                <h2>Expense History</h2>
+
+                <label for="searchExpenses">
+                    Search expenses
+                </label>
+
+                <input
+                    id="searchExpenses"
+                    type="search"
+                    placeholder="Search by name or description"
+                >
+
+                <label for="filterCategory">
+                    Filter by category
+                </label>
+
+                <select id="filterCategory">
+                    <option value="">All categories</option>
+                    <option value="Food">Food</option>
+                    <option value="Transport">Transport</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Education">Education</option>
+                    <option value="Bills">Bills</option>
+                    <option value="Health">Health</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Other">Other</option>
+                </select>
+
+                <label for="filterMonth">
+                    Filter by month
+                </label>
+
+                <input
+                    id="filterMonth"
+                    type="month"
+                >
+
+                <div id="expenseList">
+                    <p>Your expenses will appear here after loading.</p>
+                </div>
+            </section>
+
+            <!-- CATEGORY TOTALS -->
+            <section id="categorySection">
+                <h2>Spending by Category</h2>
+
+                <div id="categoryTotals">
+                    <p>Your category totals will appear here.</p>
+                </div>
+            </section>
+
+            <!-- CHART -->
+            <section id="chartSection">
+                <h2>Expense Chart</h2>
+
+                <div class="chart-container">
+                    <canvas
+                        id="expenseChart"
+                        height="250"
+                        role="img"
+                        aria-label="Chart showing expenses by category"
+                    ></canvas>
+                </div>
+            </section>
+
+            <!-- SPENDING INSIGHTS -->
+            <section id="insightsSection">
+                <h2>Spending Insights</h2>
+
+                <p id="insights">
+                    Add expenses to see your spending insights.
+                </p>
+            </section>
+        </section>
+    </main>
+
+    <footer>
+        <p>Made with 💚 PennyPilot</p>
+    </footer>
+
+    <!-- Load dependencies before the application JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
