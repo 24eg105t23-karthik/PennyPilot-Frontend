@@ -24,17 +24,36 @@
 
             <form id="authForm">
                 <label for="authEmail">Email address</label>
-                <input id="authEmail" name="email" type="email"
-                       placeholder="Enter your email" autocomplete="email" required>
+                <input
+                    id="authEmail"
+                    name="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    autocomplete="email"
+                    required
+                >
 
                 <label for="authPassword">Password</label>
-                <input id="authPassword" name="password" type="password"
-                       placeholder="Enter password" autocomplete="current-password"
-                       minlength="6" required>
+                <input
+                    id="authPassword"
+                    name="password"
+                    type="password"
+                    placeholder="Enter password"
+                    autocomplete="current-password"
+                    minlength="6"
+                    required
+                >
 
-                <button id="signInButton" type="button">Sign In</button>
-                <button id="signUpButton" type="button">Create Account</button>
-                <button id="forgotPasswordButton" type="button">Forgot Password?</button>
+                <!-- FIX: Sign In now submits the form -->
+                <button id="signInButton" type="submit">Sign In</button>
+
+                <button id="signUpButton" type="button">
+                    Create Account
+                </button>
+
+                <button id="forgotPasswordButton" type="button">
+                    Forgot Password?
+                </button>
             </form>
         </section>
 
@@ -45,17 +64,29 @@
 
             <form id="resetPasswordForm">
                 <label for="newPassword">New password</label>
-                <input id="newPassword" name="newPassword" type="password"
-                       autocomplete="new-password" minlength="6" required>
+                <input
+                    id="newPassword"
+                    name="newPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="6"
+                    required
+                >
 
                 <label for="confirmNewPassword">Confirm new password</label>
-                <input id="confirmNewPassword" name="confirmNewPassword"
-                       type="password" autocomplete="new-password"
-                       minlength="6" required>
+                <input
+                    id="confirmNewPassword"
+                    name="confirmNewPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="6"
+                    required
+                >
 
                 <button id="saveNewPasswordButton" type="submit">
                     Save New Password
                 </button>
+
                 <button id="cancelPasswordResetButton" type="button">
                     Cancel
                 </button>
@@ -72,19 +103,23 @@
 
             <h2>Your Dashboard</h2>
 
+            <!-- EXPENSE SUMMARY -->
             <section class="summary" aria-label="Expense summary">
                 <article>
                     <h3>Total Expenses</h3>
                     <p id="totalExpenses">₹0.00</p>
                 </article>
+
                 <article>
                     <h3>Today's Expenses</h3>
                     <p id="todayExpenses">₹0.00</p>
                 </article>
+
                 <article>
                     <h3>This Month</h3>
                     <p id="monthlyExpenses">₹0.00</p>
                 </article>
+
                 <article>
                     <h3>Number of Expenses</h3>
                     <p id="expenseCount">0</p>
@@ -94,16 +129,36 @@
             <!-- MONTHLY BUDGET -->
             <section id="budgetSection">
                 <h2>Monthly Budget</h2>
-                <p>Monthly budget: <strong>₹10,000.00</strong></p>
-                <p>Remaining budget: <strong id="budgetRemaining">₹10,000.00</strong></p>
 
-                <div id="budgetProgressTrack" class="budget-track"
-                     role="progressbar" aria-label="Monthly budget used"
-                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div id="budgetProgress" class="budget-progress"
-                         style="width: 0%;"></div>
+                <p>
+                    Monthly budget:
+                    <strong>₹10,000.00</strong>
+                </p>
+
+                <p>
+                    Remaining budget:
+                    <strong id="budgetRemaining">₹10,000.00</strong>
+                </p>
+
+                <div
+                    id="budgetProgressTrack"
+                    class="budget-track"
+                    role="progressbar"
+                    aria-label="Monthly budget used"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                >
+                    <div
+                        id="budgetProgress"
+                        class="budget-progress"
+                        style="width: 0%;"
+                    ></div>
                 </div>
-                <p id="budgetMessage">Your monthly budget information will appear here.</p>
+
+                <p id="budgetMessage">
+                    Your monthly budget information will appear here.
+                </p>
             </section>
 
             <!-- ADD EXPENSE -->
@@ -112,12 +167,25 @@
 
                 <form id="expenseForm">
                     <label for="expenseTitle">Expense name</label>
-                    <input id="expenseTitle" name="title" type="text"
-                           placeholder="e.g. Lunch" maxlength="150" required>
+                    <input
+                        id="expenseTitle"
+                        name="title"
+                        type="text"
+                        placeholder="e.g. Lunch"
+                        maxlength="150"
+                        required
+                    >
 
                     <label for="expenseAmount">Amount (₹)</label>
-                    <input id="expenseAmount" name="amount" type="number"
-                           min="0.01" step="0.01" placeholder="0.00" required>
+                    <input
+                        id="expenseAmount"
+                        name="amount"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                        required
+                    >
 
                     <label for="expenseCategory">Category</label>
                     <select id="expenseCategory" name="category" required>
@@ -133,11 +201,23 @@
                     </select>
 
                     <label for="expenseDate">Date</label>
-                    <input id="expenseDate" name="expense_date" type="date" required>
+                    <input
+                        id="expenseDate"
+                        name="expense_date"
+                        type="date"
+                        required
+                    >
 
-                    <label for="expenseDescription">Description (optional)</label>
-                    <textarea id="expenseDescription" name="description"
-                              placeholder="Add a note" rows="3" maxlength="1000"></textarea>
+                    <label for="expenseDescription">
+                        Description (optional)
+                    </label>
+                    <textarea
+                        id="expenseDescription"
+                        name="description"
+                        placeholder="Add a note"
+                        rows="3"
+                        maxlength="1000"
+                    ></textarea>
 
                     <button type="submit">Add Expense</button>
                 </form>
@@ -154,7 +234,9 @@
                 <button type="button" data-quick-cash="500">₹500</button>
 
                 <div>
-                    <button id="voiceButton" type="button">🎤 Voice Expense</button>
+                    <button id="voiceButton" type="button">
+                        🎤 Voice Expense
+                    </button>
                     <p id="voiceMessage" role="status" aria-live="polite"></p>
                 </div>
             </section>
@@ -164,8 +246,11 @@
                 <h2>Expense History</h2>
 
                 <label for="searchExpenses">Search expenses</label>
-                <input id="searchExpenses" type="search"
-                       placeholder="Search by name or description">
+                <input
+                    id="searchExpenses"
+                    type="search"
+                    placeholder="Search by name or description"
+                >
 
                 <label for="filterCategory">Filter by category</label>
                 <select id="filterCategory">
@@ -200,16 +285,21 @@
             <section id="chartSection">
                 <h2>Expense Chart</h2>
                 <div class="chart-container">
-                    <canvas id="expenseChart" height="250"
-                            role="img"
-                            aria-label="Chart showing expenses by category"></canvas>
+                    <canvas
+                        id="expenseChart"
+                        height="250"
+                        role="img"
+                        aria-label="Chart showing expenses by category"
+                    ></canvas>
                 </div>
             </section>
 
             <!-- INSIGHTS -->
             <section id="insightsSection">
                 <h2>Spending Insights</h2>
-                <p id="insights">Add expenses to see your spending insights.</p>
+                <p id="insights">
+                    Add expenses to see your spending insights.
+                </p>
             </section>
         </section>
     </main>
