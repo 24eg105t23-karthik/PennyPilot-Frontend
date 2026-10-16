@@ -22,24 +22,53 @@
     </header>
 
     <main>
-        <!-- Shared message area: visible during sign-in and while using the app -->
-        <p
-            id="appMessage"
-            role="status"
-            aria-live="polite"
-        ></p>
+        <p id="appMessage" role="status" aria-live="polite"></p>
+
+        <!-- PASSWORD RESET -->
+        <section id="passwordResetSection" hidden>
+            <h2>Reset Your Password</h2>
+            <p>Enter your new password below.</p>
+
+            <form id="resetPasswordForm">
+                <label for="newPassword">New password</label>
+                <input
+                    id="newPassword"
+                    name="newPassword"
+                    type="password"
+                    placeholder="Enter new password"
+                    autocomplete="new-password"
+                    minlength="6"
+                    required
+                >
+
+                <label for="confirmNewPassword">Confirm new password</label>
+                <input
+                    id="confirmNewPassword"
+                    name="confirmNewPassword"
+                    type="password"
+                    placeholder="Confirm new password"
+                    autocomplete="new-password"
+                    minlength="6"
+                    required
+                >
+
+                <button id="saveNewPasswordButton" type="submit">
+                    Save New Password
+                </button>
+
+                <button id="cancelPasswordResetButton" type="button">
+                    Back to Sign In
+                </button>
+            </form>
+        </section>
 
         <!-- AUTHENTICATION -->
         <section id="authSection">
             <h2>Welcome to PennyPilot</h2>
-
-            <p>
-                Sign in or create an account to manage your expenses.
-            </p>
+            <p>Sign in or create an account to manage your expenses.</p>
 
             <form id="authForm">
                 <label for="authEmail">Email address</label>
-
                 <input
                     id="authEmail"
                     name="email"
@@ -50,7 +79,6 @@
                 >
 
                 <label for="authPassword">Password</label>
-
                 <input
                     id="authPassword"
                     name="password"
@@ -61,18 +89,11 @@
                     required
                 >
 
-                <button
-                    id="signInButton"
-                    type="button"
-                >
-                    Sign In
-                </button>
+                <button id="signInButton" type="button">Sign In</button>
+                <button id="signUpButton" type="button">Create Account</button>
 
-                <button
-                    id="signUpButton"
-                    type="button"
-                >
-                    Create Account
+                <button id="forgotPasswordButton" type="button">
+                    Forgot Password?
                 </button>
             </form>
         </section>
@@ -81,15 +102,8 @@
         <section id="appSection" hidden>
             <div class="user-bar">
                 <span>Signed in as </span>
-
                 <strong id="userEmail"></strong>
-
-                <button
-                    id="signOutButton"
-                    type="button"
-                >
-                    Sign Out
-                </button>
+                <button id="signOutButton" type="button">Sign Out</button>
             </div>
 
             <h2>Your Dashboard</h2>
@@ -100,17 +114,14 @@
                     <h3>Total Expenses</h3>
                     <p id="totalExpenses">₹0.00</p>
                 </article>
-
                 <article>
                     <h3>Today's Expenses</h3>
                     <p id="todayExpenses">₹0.00</p>
                 </article>
-
                 <article>
                     <h3>This Month</h3>
                     <p id="monthlyExpenses">₹0.00</p>
                 </article>
-
                 <article>
                     <h3>Number of Expenses</h3>
                     <p id="expenseCount">0</p>
@@ -120,12 +131,7 @@
             <!-- BUDGET -->
             <section id="budgetSection">
                 <h2>Monthly Budget</h2>
-
-                <p>
-                    Monthly budget:
-                    <strong>₹10,000</strong>
-                </p>
-
+                <p>Monthly budget: <strong>₹10,000</strong></p>
                 <p>
                     Remaining budget:
                     <strong id="budgetRemaining">₹10,000.00</strong>
@@ -157,10 +163,7 @@
                 <h2>Add an Expense</h2>
 
                 <form id="expenseForm">
-                    <label for="expenseTitle">
-                        Expense name
-                    </label>
-
+                    <label for="expenseTitle">Expense name</label>
                     <input
                         id="expenseTitle"
                         name="title"
@@ -170,10 +173,7 @@
                         required
                     >
 
-                    <label for="expenseAmount">
-                        Amount (₹)
-                    </label>
-
+                    <label for="expenseAmount">Amount (₹)</label>
                     <input
                         id="expenseAmount"
                         name="amount"
@@ -184,15 +184,8 @@
                         required
                     >
 
-                    <label for="expenseCategory">
-                        Category
-                    </label>
-
-                    <select
-                        id="expenseCategory"
-                        name="category"
-                        required
-                    >
+                    <label for="expenseCategory">Category</label>
+                    <select id="expenseCategory" name="category" required>
                         <option value="">Choose category</option>
                         <option value="Food">Food</option>
                         <option value="Transport">Transport</option>
@@ -204,10 +197,7 @@
                         <option value="Other">Other</option>
                     </select>
 
-                    <label for="expenseDate">
-                        Date
-                    </label>
-
+                    <label for="expenseDate">Date</label>
                     <input
                         id="expenseDate"
                         name="expense_date"
@@ -215,10 +205,7 @@
                         required
                     >
 
-                    <label for="expenseDescription">
-                        Description (optional)
-                    </label>
-
+                    <label for="expenseDescription">Description (optional)</label>
                     <textarea
                         id="expenseDescription"
                         name="description"
@@ -227,59 +214,25 @@
                         maxlength="1000"
                     ></textarea>
 
-                    <button type="submit">
-                        Add Expense
-                    </button>
+                    <button type="submit">Add Expense</button>
                 </form>
             </section>
 
             <!-- QUICK ADD -->
             <section id="quickAddSection">
                 <h2>Quick Add</h2>
-
                 <p>Select an amount to fill in the expense form.</p>
 
-                <button
-                    type="button"
-                    data-quick-cash="50"
-                >
-                    ₹50
-                </button>
-
-                <button
-                    type="button"
-                    data-quick-cash="100"
-                >
-                    ₹100
-                </button>
-
-                <button
-                    type="button"
-                    data-quick-cash="200"
-                >
-                    ₹200
-                </button>
-
-                <button
-                    type="button"
-                    data-quick-cash="500"
-                >
-                    ₹500
-                </button>
+                <button type="button" data-quick-cash="50">₹50</button>
+                <button type="button" data-quick-cash="100">₹100</button>
+                <button type="button" data-quick-cash="200">₹200</button>
+                <button type="button" data-quick-cash="500">₹500</button>
 
                 <div>
-                    <button
-                        id="voiceButton"
-                        type="button"
-                    >
+                    <button id="voiceButton" type="button">
                         🎤 Voice Expense
                     </button>
-
-                    <p
-                        id="voiceMessage"
-                        role="status"
-                        aria-live="polite"
-                    ></p>
+                    <p id="voiceMessage" role="status" aria-live="polite"></p>
                 </div>
             </section>
 
@@ -287,20 +240,14 @@
             <section id="expenseHistorySection">
                 <h2>Expense History</h2>
 
-                <label for="searchExpenses">
-                    Search expenses
-                </label>
-
+                <label for="searchExpenses">Search expenses</label>
                 <input
                     id="searchExpenses"
                     type="search"
                     placeholder="Search by name or description"
                 >
 
-                <label for="filterCategory">
-                    Filter by category
-                </label>
-
+                <label for="filterCategory">Filter by category</label>
                 <select id="filterCategory">
                     <option value="">All categories</option>
                     <option value="Food">Food</option>
@@ -313,14 +260,8 @@
                     <option value="Other">Other</option>
                 </select>
 
-                <label for="filterMonth">
-                    Filter by month
-                </label>
-
-                <input
-                    id="filterMonth"
-                    type="month"
-                >
+                <label for="filterMonth">Filter by month</label>
+                <input id="filterMonth" type="month">
 
                 <div id="expenseList">
                     <p>Your expenses will appear here after loading.</p>
@@ -330,7 +271,6 @@
             <!-- CATEGORY TOTALS -->
             <section id="categorySection">
                 <h2>Spending by Category</h2>
-
                 <div id="categoryTotals">
                     <p>Your category totals will appear here.</p>
                 </div>
@@ -339,7 +279,6 @@
             <!-- CHART -->
             <section id="chartSection">
                 <h2>Expense Chart</h2>
-
                 <div class="chart-container">
                     <canvas
                         id="expenseChart"
@@ -353,7 +292,6 @@
             <!-- SPENDING INSIGHTS -->
             <section id="insightsSection">
                 <h2>Spending Insights</h2>
-
                 <p id="insights">
                     Add expenses to see your spending insights.
                 </p>
@@ -365,7 +303,6 @@
         <p>Made with 💚 PennyPilot</p>
     </footer>
 
-    <!-- Load dependencies before the application JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="script.js"></script>
