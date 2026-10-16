@@ -1,11 +1,13 @@
+
 "use strict";
 
 /* =========================================================
-   PENNYPILOT — EXPENSE TRACKER
-   Supabase authentication and expense storage
+   PENNYPILOT — SMART EXPENSE TRACKER
+   Supabase authentication, expense storage and dashboard
    ========================================================= */
 
 // 1. SUPABASE CONFIGURATION
+
 const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY =
     "sb_publishable_eHuDa1uoMvWdv-hqAWYviA_YrnQoBhg";
@@ -29,65 +31,57 @@ let supabaseClient = null;
 let currentUser = null;
 let expenses = [];
 let expenseChart = null;
-let authInitialized = false;
+let authRequestInProgress = false;
+let expenseRequestInProgress = false;
 
 
 // 2. GENERAL HELPERS
 
 function setMessage(message, isError = false) {
-    // Prefer a message element visible outside the hidden app section.
-    const element =
-        $("appMessage") ||
-        $("authMessage") ||
-        $("message");
+    const element = $("appMessage");
 
-    if (!element) {
-        console[isError ? "error" : "log"](message);
-        return;
+    if (element) {
+        element.textContent = message;
+        element.style.color = isError ? "#dc2626" : "#15803d";
+        element.setAttribute("role", "status");
+        element.setAttribute("aria-live", "polite");
+    } else {
+        alert(message);
     }
-
-    element.textContent = message;
-    element.style.color = isError ? "#dc2626" : "#15803d";
-    element.setAttribute("role", "status");
 }
 
 function escapeHTML(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => {
-        const entities = {
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#39;"
-        };
+    const entities = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    };
 
-        return entities[character];
-    });
+    return String(value ?? "").replace(/[&<>"']/g, character => entities[character]);
 }
 
 function formatCurrency(amount) {
     return new Intl.NumberFormat("en-IN", {
         style: "currency",
         currency: "INR",
+        minimumFractionDigits: 2,
         maximumFractionDigits: 2
     }).format(Number(amount) || 0);
 }
 
 function getToday() {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
 
     return `${year}-${month}-${day}`;
 }
 
 function getCurrentMonth() {
-    const date = new Date();
-
-    return `${date.getFullYear()}-${String(
-        date.getMonth() + 1
-    ).padStart(2, "0")}`;
+    return getToday().slice(0, 7);
 }
 
 function getElementValue(id) {
@@ -111,104 +105,120 @@ function showElement(id, visible) {
     }
 }
 
+function setButtonLoading(id, loading, loadingText) {
+    const button = $(id);
+
+    if (!button) return;
+
+    if (loading) {
+        button.dataset.originalText = button.textContent;
+        button.textContent = loadingText;
+        button.disabled = true;
+    } else {
+        button.textContent =
+            button.dataset.originalText || button.textContent;
+        button.disabled = false;
+        delete button.dataset.originalText;
+    }
+}
+
 
 // 3. INITIALIZE SUPABASE
 
 function initializeSupabase() {
-    if (!window.supabase || !window.supabase.createClient) {
+    if (
+        !window.supabase ||
+        typeof window.supabase.createClient !== "function"
+    ) {
         setMessage(
             "Supabase failed to load. Check the Supabase script in index.html.",
             true
         );
-
         return false;
     }
 
-    supabaseClient = window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_PUBLISHABLE_KEY
-    );
+    try {
+        supabaseClient = window.supabase.createClient(
+            SUPABASE_URL,
+            SUPABASE_PUBLISHABLE_KEY
+        );
 
-    return true;
+        return true;
+    } catch (error) {
+        setMessage(
+            "Could not initialize Supabase: " + error.message,
+            true
+        );
+        return false;
+    }
 }
 
 
-// 4. SHOW THE CORRECT SECTION
+// 4. AUTHENTICATION UI
 
 function showSignedOut() {
     currentUser = null;
     expenses = [];
+    expenseRequestInProgress = false;
 
     showElement("authSection", true);
     showElement("appSection", false);
 
-    // Also support common alternative section IDs.
-    showElement("loginSection", true);
-    showElement("signupSection", true);
-
-    renderExpenseList();
-    renderSummary();
-    renderCategoryTotals();
-    renderChart();
+    renderDashboard();
 }
 
 function showSignedIn(user) {
+    if (!user) return;
+
     currentUser = user;
 
     showElement("authSection", false);
     showElement("appSection", true);
 
-    showElement("loginSection", false);
-    showElement("signupSection", false);
-
-    const emailElement =
-        $("userEmail") ||
-        $("loggedInEmail") ||
-        $("currentUserEmail");
+    const emailElement = $("userEmail");
 
     if (emailElement) {
         emailElement.textContent = user.email || "";
     }
 
-    loadExpenses();
+    setElementValue("expenseDate", getToday());
+    return loadExpenses();
 }
 
 
-// 5. SIGN UP
+// 5. CREATE ACCOUNT
 
 async function signUp(event) {
-    if (event) {
-        event.preventDefault();
-    }
+    if (event) event.preventDefault();
+
+    if (authRequestInProgress) return;
 
     if (!supabaseClient) {
-        setMessage("Supabase is not initialized.", true);
+        setMessage("Supabase is not initialized. Refresh the page.", true);
         return;
     }
 
-    const email =
-        getElementValue("signupEmail") ||
-        getElementValue("signUpEmail") ||
-        getElementValue("email");
-
-    const password =
-        getElementValue("signupPassword") ||
-        getElementValue("signUpPassword") ||
-        getElementValue("password");
+    // These are the actual IDs in your index.html.
+    const email = getElementValue("authEmail");
+    const password = $("authPassword")?.value || "";
 
     if (!email || !password) {
-        setMessage("Enter your email and password.", true);
+        setMessage("Please enter your email and password.", true);
+        return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setMessage("Please enter a valid email address.", true);
         return;
     }
 
     if (password.length < 6) {
-        setMessage(
-            "Your password must contain at least 6 characters.",
-            true
-        );
+        setMessage("Password must contain at least 6 characters.", true);
         return;
     }
 
+    authRequestInProgress = true;
+    setButtonLoading("signUpButton", true, "Creating account...");
     setMessage("Creating your account...");
 
     try {
@@ -223,11 +233,11 @@ async function signUp(event) {
         }
 
         if (data.session && data.user) {
-            setMessage("Account created successfully.");
             await showSignedIn(data.user);
+            setMessage("Account created successfully!");
         } else {
             setMessage(
-                "Account created. Check your email to confirm your account before signing in."
+                "Account request successful. Check your email for a confirmation link if email confirmation is enabled. After confirming, sign in."
             );
         }
     } catch (error) {
@@ -235,6 +245,9 @@ async function signUp(event) {
             error.message || "Unable to create your account.",
             true
         );
+    } finally {
+        authRequestInProgress = false;
+        setButtonLoading("signUpButton", false);
     }
 }
 
@@ -242,32 +255,26 @@ async function signUp(event) {
 // 6. SIGN IN
 
 async function signIn(event) {
-    if (event) {
-        event.preventDefault();
-    }
+    if (event) event.preventDefault();
+
+    if (authRequestInProgress) return;
 
     if (!supabaseClient) {
-        setMessage("Supabase is not initialized.", true);
+        setMessage("Supabase is not initialized. Refresh the page.", true);
         return;
     }
 
-    const email =
-        getElementValue("signinEmail") ||
-        getElementValue("signInEmail") ||
-        getElementValue("loginEmail") ||
-        getElementValue("email");
-
-    const password =
-        getElementValue("signinPassword") ||
-        getElementValue("signInPassword") ||
-        getElementValue("loginPassword") ||
-        getElementValue("password");
+    // Use the same actual input IDs as the HTML.
+    const email = getElementValue("authEmail");
+    const password = $("authPassword")?.value || "";
 
     if (!email || !password) {
-        setMessage("Enter your email and password.", true);
+        setMessage("Please enter your email and password.", true);
         return;
     }
 
+    authRequestInProgress = true;
+    setButtonLoading("signInButton", true, "Signing in...");
     setMessage("Signing in...");
 
     try {
@@ -282,10 +289,13 @@ async function signIn(event) {
             return;
         }
 
-        setMessage("Signed in successfully.");
         await showSignedIn(data.user);
+        setMessage("Signed in successfully!");
     } catch (error) {
         setMessage(error.message || "Unable to sign in.", true);
+    } finally {
+        authRequestInProgress = false;
+        setButtonLoading("signInButton", false);
     }
 }
 
@@ -293,13 +303,9 @@ async function signIn(event) {
 // 7. SIGN OUT
 
 async function signOut(event) {
-    if (event) {
-        event.preventDefault();
-    }
+    if (event) event.preventDefault();
 
-    if (!supabaseClient) {
-        return;
-    }
+    if (!supabaseClient) return;
 
     try {
         const { error } = await supabaseClient.auth.signOut();
@@ -320,31 +326,36 @@ async function signOut(event) {
 // 8. LOAD EXPENSES FROM SUPABASE
 
 async function loadExpenses() {
-    if (!supabaseClient || !currentUser) {
+    if (!supabaseClient || !currentUser || expenseRequestInProgress) {
         return;
     }
 
+    expenseRequestInProgress = true;
+
     try {
+        const userId = currentUser.id;
+
         const { data, error } = await supabaseClient
             .from("expenses")
             .select("*")
-            .eq("user_id", currentUser.id)
+            .eq("user_id", userId)
             .order("expense_date", { ascending: false })
             .order("created_at", { ascending: false });
 
         if (error) {
-            setMessage(
-                "Could not load expenses: " + error.message,
-                true
-            );
+            setMessage("Could not load expenses: " + error.message, true);
             return;
         }
 
-        expenses = data || [];
+        // Ignore results if the user changed while the request was running.
+        if (!currentUser || currentUser.id !== userId) return;
 
+        expenses = data || [];
         renderDashboard();
     } catch (error) {
         setMessage(error.message || "Unable to load expenses.", true);
+    } finally {
+        expenseRequestInProgress = false;
     }
 }
 
@@ -352,27 +363,18 @@ async function loadExpenses() {
 // 9. ADD AN EXPENSE
 
 async function addExpense(event) {
-    if (event) {
-        event.preventDefault();
-    }
+    if (event) event.preventDefault();
 
     if (!supabaseClient || !currentUser) {
         setMessage("Please sign in before adding an expense.", true);
         return;
     }
 
-    const title =
-        getElementValue("expenseTitle") ||
-        getElementValue("expenseName") ||
-        getElementValue("title");
-
+    const title = getElementValue("expenseTitle");
     const amountText = getElementValue("expenseAmount");
     const category = getElementValue("expenseCategory");
-    const expenseDate =
-        getElementValue("expenseDate") || getToday();
-
+    const expenseDate = getElementValue("expenseDate");
     const description = getElementValue("expenseDescription");
-
     const amount = Number(amountText);
 
     if (!title) {
@@ -380,18 +382,32 @@ async function addExpense(event) {
         return;
     }
 
-    if (!amountText || !Number.isFinite(amount) || amount <= 0) {
-        setMessage("Enter a valid amount greater than zero.", true);
+    if (title.length > 150) {
+        setMessage("Expense name must be 150 characters or fewer.", true);
         return;
     }
 
-    if (!category) {
-        setMessage("Choose an expense category.", true);
+    if (
+        !amountText ||
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+        setMessage("Enter an amount greater than zero.", true);
+        return;
+    }
+
+    if (!CATEGORIES.includes(category)) {
+        setMessage("Please choose a valid expense category.", true);
         return;
     }
 
     if (!expenseDate) {
-        setMessage("Choose an expense date.", true);
+        setMessage("Please choose an expense date.", true);
+        return;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
+        setMessage("Please enter a valid expense date.", true);
         return;
     }
 
@@ -404,6 +420,16 @@ async function addExpense(event) {
         description: description || null
     };
 
+    const submitButton = $("expenseForm")?.querySelector(
+        'button[type="submit"]'
+    );
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.dataset.originalText = submitButton.textContent;
+        submitButton.textContent = "Saving...";
+    }
+
     try {
         setMessage("Saving expense...");
 
@@ -414,27 +440,41 @@ async function addExpense(event) {
             .single();
 
         if (error) {
-            setMessage(
-                "Could not save expense: " + error.message,
-                true
-            );
+            setMessage("Could not save expense: " + error.message, true);
             return;
         }
 
-        expenses.unshift(data);
+        expenses.push(data);
+
+        expenses.sort((a, b) => {
+            const dateCompare = String(b.expense_date).localeCompare(
+                String(a.expense_date)
+            );
+
+            if (dateCompare !== 0) return dateCompare;
+
+            return String(b.created_at || "").localeCompare(
+                String(a.created_at || "")
+            );
+        });
 
         const form = $("expenseForm");
 
-        if (form) {
-            form.reset();
-        }
+        if (form) form.reset();
 
         setElementValue("expenseDate", getToday());
 
         renderDashboard();
-        setMessage("Expense added successfully.");
+        setMessage("Expense added successfully!");
     } catch (error) {
         setMessage(error.message || "Unable to add expense.", true);
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent =
+                submitButton.dataset.originalText || "Add Expense";
+            delete submitButton.dataset.originalText;
+        }
     }
 }
 
@@ -449,36 +489,33 @@ async function deleteExpense(id) {
 
     const expenseId = Number(id);
 
-    if (!Number.isFinite(expenseId)) {
+    if (!Number.isSafeInteger(expenseId) || expenseId <= 0) {
         setMessage("Invalid expense ID.", true);
         return;
     }
 
-    const confirmed = window.confirm(
-        "Are you sure you want to delete this expense?"
-    );
-
-    if (!confirmed) {
+    if (!window.confirm("Are you sure you want to delete this expense?")) {
         return;
     }
 
     try {
+        const userId = currentUser.id;
+
         const { error } = await supabaseClient
             .from("expenses")
             .delete()
             .eq("id", expenseId)
-            .eq("user_id", currentUser.id);
+            .eq("user_id", userId);
 
         if (error) {
-            setMessage(
-                "Could not delete expense: " + error.message,
-                true
-            );
+            setMessage("Could not delete expense: " + error.message, true);
             return;
         }
 
+        if (!currentUser || currentUser.id !== userId) return;
+
         expenses = expenses.filter(
-            (expense) => Number(expense.id) !== expenseId
+            expense => Number(expense.id) !== expenseId
         );
 
         renderDashboard();
@@ -489,7 +526,7 @@ async function deleteExpense(id) {
 }
 
 
-// 11. FILTER EXPENSES
+// 11. SEARCH AND FILTER
 
 function getFilteredExpenses() {
     let filtered = [...expenses];
@@ -499,29 +536,25 @@ function getFilteredExpenses() {
     const month = getElementValue("filterMonth");
 
     if (search) {
-        filtered = filtered.filter((expense) => {
+        filtered = filtered.filter(expense => {
             const title = String(expense.title || "").toLowerCase();
             const description = String(
                 expense.description || ""
             ).toLowerCase();
 
-            return (
-                title.includes(search) ||
-                description.includes(search)
-            );
+            return title.includes(search) || description.includes(search);
         });
     }
 
     if (category && category !== "all") {
         filtered = filtered.filter(
-            (expense) => expense.category === category
+            expense => expense.category === category
         );
     }
 
     if (month) {
         filtered = filtered.filter(
-            (expense) =>
-                String(expense.expense_date || "").slice(0, 7) === month
+            expense => String(expense.expense_date || "").slice(0, 7) === month
         );
     }
 
@@ -529,18 +562,12 @@ function getFilteredExpenses() {
 }
 
 
-// 12. RENDER EXPENSE LIST
+// 12. RENDER EXPENSE HISTORY
 
 function renderExpenseList() {
-    const container =
-        $("expensesList") ||
-        $("expenseList") ||
-        $("recentTransactions") ||
-        $("allExpenses");
+    const container = $("expenseList");
 
-    if (!container) {
-        return;
-    }
+    if (!container) return;
 
     const filtered = getFilteredExpenses();
 
@@ -549,12 +576,15 @@ function renderExpenseList() {
         return;
     }
 
-    container.innerHTML = filtered.map((expense) => `
-        <div class="expense-item" data-expense-id="${escapeHTML(expense.id)}">
+    container.innerHTML = filtered.map(expense => `
+        <div class="expense-item"
+             data-expense-id="${escapeHTML(expense.id)}">
+
             <div class="expense-details">
                 <strong>${escapeHTML(expense.title)}</strong>
                 <p>${escapeHTML(expense.category)}</p>
                 <small>${escapeHTML(expense.expense_date || "")}</small>
+
                 ${
                     expense.description
                         ? `<p>${escapeHTML(expense.description)}</p>`
@@ -568,8 +598,7 @@ function renderExpenseList() {
                     type="button"
                     class="delete-expense"
                     data-delete-expense="${escapeHTML(expense.id)}"
-                    aria-label="Delete ${escapeHTML(expense.title)}"
-                >
+                    aria-label="Delete ${escapeHTML(expense.title)}">
                     Delete
                 </button>
             </div>
@@ -578,7 +607,7 @@ function renderExpenseList() {
 }
 
 
-// 13. RENDER SUMMARY CARDS
+// 13. DASHBOARD SUMMARY AND BUDGET
 
 function renderSummary() {
     const total = expenses.reduce(
@@ -587,24 +616,17 @@ function renderSummary() {
     );
 
     const today = getToday();
-
-    const todayTotal = expenses
-        .filter((expense) => expense.expense_date === today)
-        .reduce(
-            (sum, expense) => sum + Number(expense.amount || 0),
-            0
-        );
-
     const month = getCurrentMonth();
 
+    const todayTotal = expenses
+        .filter(expense => expense.expense_date === today)
+        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+
     const monthTotal = expenses
-        .filter((expense) =>
+        .filter(expense =>
             String(expense.expense_date || "").startsWith(month)
         )
-        .reduce(
-            (sum, expense) => sum + Number(expense.amount || 0),
-            0
-        );
+        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
     const values = {
         totalExpenses: formatCurrency(total),
@@ -615,42 +637,40 @@ function renderSummary() {
 
     Object.entries(values).forEach(([id, value]) => {
         const element = $(id);
-
-        if (element) {
-            element.textContent = value;
-        }
+        if (element) element.textContent = value;
     });
 
-    const budgetRemaining = $("budgetRemaining");
+    const remaining = MONTHLY_BUDGET - monthTotal;
 
-    if (budgetRemaining) {
-        budgetRemaining.textContent = formatCurrency(
-            MONTHLY_BUDGET - monthTotal
-        );
+    if ($("budgetRemaining")) {
+        $("budgetRemaining").textContent = formatCurrency(remaining);
     }
 
-    const budgetProgress = $("budgetProgress");
+    const percentage = Math.min(
+        100,
+        (monthTotal / MONTHLY_BUDGET) * 100
+    );
 
-    if (budgetProgress) {
-        const percentage = Math.min(
-            100,
-            (monthTotal / MONTHLY_BUDGET) * 100
-        );
+    if ($("budgetProgress")) {
+        $("budgetProgress").style.width = `${percentage}%`;
+    }
 
-        budgetProgress.style.width = `${percentage}%`;
-        budgetProgress.setAttribute(
+    if ($("budgetProgressTrack")) {
+        $("budgetProgressTrack").setAttribute(
             "aria-valuenow",
             String(Math.round(percentage))
         );
     }
 
-    const budgetMessage = $("budgetMessage");
-
-    if (budgetMessage) {
-        budgetMessage.textContent =
-            monthTotal > MONTHLY_BUDGET
-                ? "You have exceeded your monthly budget."
-                : "You are within your monthly budget.";
+    if ($("budgetMessage")) {
+        if (monthTotal > MONTHLY_BUDGET) {
+            $("budgetMessage").textContent =
+                "You have exceeded your monthly budget by " +
+                formatCurrency(monthTotal - MONTHLY_BUDGET) + ".";
+        } else {
+            $("budgetMessage").textContent =
+                `${percentage.toFixed(1)}% of your monthly budget used.`;
+        }
     }
 }
 
@@ -660,16 +680,14 @@ function renderSummary() {
 function getCategoryTotals() {
     const totals = {};
 
-    CATEGORIES.forEach((category) => {
+    CATEGORIES.forEach(category => {
         totals[category] = 0;
     });
 
-    expenses.forEach((expense) => {
-        const category = expense.category || "Other";
-
-        if (totals[category] === undefined) {
-            totals[category] = 0;
-        }
+    expenses.forEach(expense => {
+        const category = CATEGORIES.includes(expense.category)
+            ? expense.category
+            : "Other";
 
         totals[category] += Number(expense.amount || 0);
     });
@@ -680,22 +698,18 @@ function getCategoryTotals() {
 function renderCategoryTotals() {
     const container = $("categoryTotals");
 
-    if (!container) {
-        return;
-    }
+    if (!container) return;
 
-    const totals = getCategoryTotals();
-
-    const nonZero = Object.entries(totals)
+    const totals = Object.entries(getCategoryTotals())
         .filter(([, amount]) => amount > 0)
         .sort((a, b) => b[1] - a[1]);
 
-    if (nonZero.length === 0) {
+    if (totals.length === 0) {
         container.innerHTML = "<p>No category spending yet.</p>";
         return;
     }
 
-    container.innerHTML = nonZero.map(([category, amount]) => `
+    container.innerHTML = totals.map(([category, amount]) => `
         <div class="category-total">
             <span>${escapeHTML(category)}</span>
             <strong>${formatCurrency(amount)}</strong>
@@ -704,10 +718,10 @@ function renderCategoryTotals() {
 }
 
 
-// 15. CATEGORY CHART
+// 15. EXPENSE CHART
 
 function renderChart() {
-    const canvas = $("expenseChart") || $("categoryChart");
+    const canvas = $("expenseChart");
 
     if (!canvas || typeof window.Chart === "undefined") {
         return;
@@ -716,14 +730,22 @@ function renderChart() {
     const totals = getCategoryTotals();
 
     const labels = Object.keys(totals).filter(
-        (category) => totals[category] > 0
+        category => totals[category] > 0
     );
 
-    const data = labels.map((category) => totals[category]);
+    const values = labels.map(category => totals[category]);
 
     if (expenseChart) {
         expenseChart.destroy();
         expenseChart = null;
+    }
+
+    if (labels.length === 0) {
+        const context = canvas.getContext("2d");
+        if (context) {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        return;
     }
 
     expenseChart = new window.Chart(canvas, {
@@ -732,7 +754,7 @@ function renderChart() {
             labels,
             datasets: [{
                 label: "Expenses",
-                data,
+                data: values,
                 borderWidth: 1
             }]
         },
@@ -746,9 +768,7 @@ function renderChart() {
                 tooltip: {
                     callbacks: {
                         label(context) {
-                            return `${context.label}: ${formatCurrency(
-                                context.raw
-                            )}`;
+                            return `${context.label}: ${formatCurrency(context.raw)}`;
                         }
                     }
                 }
@@ -758,14 +778,12 @@ function renderChart() {
 }
 
 
-// 16. INSIGHTS
+// 16. SPENDING INSIGHTS
 
 function renderInsights() {
     const container = $("insights");
 
-    if (!container) {
-        return;
-    }
+    if (!container) return;
 
     if (expenses.length === 0) {
         container.textContent =
@@ -773,37 +791,41 @@ function renderInsights() {
         return;
     }
 
-    const totals = getCategoryTotals();
+    const totals = Object.entries(getCategoryTotals())
+        .filter(([, amount]) => amount > 0)
+        .sort((a, b) => b[1] - a[1]);
 
-    const highestCategory = Object.entries(totals)
-        .sort((a, b) => b[1] - a[1])[0];
+    const month = getCurrentMonth();
 
     const monthlyTotal = expenses
-        .filter((expense) =>
-            String(expense.expense_date || "").startsWith(
-                getCurrentMonth()
-            )
+        .filter(expense =>
+            String(expense.expense_date || "").startsWith(month)
         )
-        .reduce(
-            (sum, expense) => sum + Number(expense.amount || 0),
-            0
-        );
+        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
-    let message =
-        `Your highest-spending category is ${highestCategory[0]} ` +
-        `(${formatCurrency(highestCategory[1])}). `;
+    let message = "";
 
-    message += monthlyTotal > MONTHLY_BUDGET
-        ? "Your monthly spending is above your ₹10,000 budget."
-        : `You have ${formatCurrency(
-            MONTHLY_BUDGET - monthlyTotal
-        )} remaining in your monthly budget.`;
+    if (totals.length > 0) {
+        message =
+            `Your highest-spending category is ${totals[0][0]} ` +
+            `(${formatCurrency(totals[0][1])}). `;
+    }
+
+    if (monthlyTotal > MONTHLY_BUDGET) {
+        message +=
+            `You exceeded your ₹10,000 monthly budget by ` +
+            `${formatCurrency(monthlyTotal - MONTHLY_BUDGET)}.`;
+    } else {
+        message +=
+            `${formatCurrency(MONTHLY_BUDGET - monthlyTotal)} ` +
+            "remains in your monthly budget.";
+    }
 
     container.textContent = message;
 }
 
 
-// 17. RENDER EVERYTHING
+// 17. RENDER COMPLETE DASHBOARD
 
 function renderDashboard() {
     renderSummary();
@@ -814,29 +836,17 @@ function renderDashboard() {
 }
 
 
-// 18. QUICK CASH BUTTONS
+// 18. QUICK ADD BUTTONS
 
 function setupQuickCash() {
-    document.querySelectorAll("[data-quick-cash]").forEach((button) => {
+    document.querySelectorAll("[data-quick-cash]").forEach(button => {
         button.addEventListener("click", () => {
-            const amount = button.dataset.amount;
-            const title = button.dataset.title || button.dataset.name;
-            const category = button.dataset.category;
+            const amount = button.dataset.quickCash;
 
-            if (amount !== undefined) {
-                setElementValue("expenseAmount", amount);
-                setElementValue("quickCashAmount", amount);
-            }
-
-            if (title) {
-                setElementValue("expenseTitle", title);
-                setElementValue("quickCashName", title);
-            }
-
-            if (category) {
-                setElementValue("expenseCategory", category);
-                setElementValue("quickCashCategory", category);
-            }
+            setElementValue("expenseTitle", "Quick Expense");
+            setElementValue("expenseAmount", amount);
+            setElementValue("expenseCategory", "Other");
+            setElementValue("expenseDate", getToday());
 
             const form = $("expenseForm");
 
@@ -848,107 +858,58 @@ function setupQuickCash() {
             }
         });
     });
-
-    const quickCashForm = $("quickCashForm");
-
-    if (quickCashForm) {
-        quickCashForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-
-            setElementValue(
-                "expenseTitle",
-                getElementValue("quickCashName")
-            );
-
-            setElementValue(
-                "expenseAmount",
-                getElementValue("quickCashAmount")
-            );
-
-            setElementValue(
-                "expenseCategory",
-                getElementValue("quickCashCategory")
-            );
-
-            const expenseForm = $("expenseForm");
-
-            if (expenseForm) {
-                expenseForm.requestSubmit();
-            } else {
-                addExpense();
-            }
-        });
-    }
 }
 
 
 // 19. VOICE EXPENSE INPUT
 
 function setupVoiceInput() {
-    const voiceButton =
-        $("voiceButton") ||
-        $("startVoice") ||
-        $("voiceInputButton");
+    const button = $("voiceButton");
+    const message = $("voiceMessage");
 
-    const voiceMessage = $("voiceMessage");
-
-    if (!voiceButton) {
-        return;
-    }
+    if (!button) return;
 
     const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
+        window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-        voiceButton.disabled = true;
+        button.disabled = true;
 
-        if (voiceMessage) {
-            voiceMessage.textContent =
+        if (message) {
+            message.textContent =
                 "Voice input is not supported in this browser.";
         }
 
         return;
     }
 
-    voiceButton.addEventListener("click", () => {
+    button.addEventListener("click", () => {
         const recognition = new SpeechRecognition();
 
         recognition.lang = "en-IN";
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
-        if (voiceMessage) {
-            voiceMessage.textContent = "Listening...";
-        }
+        if (message) message.textContent = "Listening...";
 
-        recognition.onresult = (event) => {
+        recognition.onresult = event => {
             const transcript = event.results[0][0].transcript;
+            const lower = transcript.toLowerCase();
 
-            if (voiceMessage) {
-                voiceMessage.textContent = `Heard: ${transcript}`;
-            }
+            if (message) message.textContent = `Heard: ${transcript}`;
 
-            const amountMatch = transcript.trim().match(
+            const amountMatch = transcript.match(
                 /(?:₹\s*|rs\.?\s*|rupees?\s*)?(\d+(?:\.\d+)?)(?:\s*rupees?)?/i
             );
 
             if (amountMatch) {
-                setElementValue(
-                    "expenseAmount",
-                    amountMatch[1]
-                );
-
-                setElementValue(
-                    "quickCashAmount",
-                    amountMatch[1]
-                );
+                setElementValue("expenseAmount", amountMatch[1]);
             }
-
-            const lowerTranscript = transcript.toLowerCase();
 
             const categoryWords = {
                 food: "Food",
+                lunch: "Food",
+                dinner: "Food",
                 transport: "Transport",
                 travel: "Transport",
                 shopping: "Shopping",
@@ -959,9 +920,8 @@ function setupVoiceInput() {
             };
 
             for (const [word, category] of Object.entries(categoryWords)) {
-                if (lowerTranscript.includes(word)) {
+                if (lower.includes(word)) {
                     setElementValue("expenseCategory", category);
-                    setElementValue("quickCashCategory", category);
                     break;
                 }
             }
@@ -977,115 +937,65 @@ function setupVoiceInput() {
 
                 if (title) {
                     setElementValue("expenseTitle", title);
-                    setElementValue("quickCashName", title);
                 }
             }
         };
 
-        recognition.onerror = (event) => {
-            if (voiceMessage) {
-                voiceMessage.textContent =
-                    `Voice input error: ${event.error}`;
+        recognition.onerror = event => {
+            if (message) {
+                message.textContent = `Voice input error: ${event.error}`;
             }
         };
 
         recognition.onend = () => {
-            if (voiceMessage && voiceMessage.textContent === "Listening...") {
-                voiceMessage.textContent = "Voice input ended.";
+            if (button) button.disabled = false;
+            if (message && message.textContent === "Listening...") {
+                message.textContent = "Voice input ended.";
             }
         };
+
+        button.disabled = true;
 
         try {
             recognition.start();
         } catch (error) {
-            if (voiceMessage) {
-                voiceMessage.textContent =
-                    "Could not start voice input. Try again.";
+            button.disabled = false;
+
+            if (message) {
+                message.textContent = "Could not start voice input. Try again.";
             }
         }
     });
 }
 
 
-// 20. CONNECT FORM EVENTS
+// 20. CONNECT ALL BUTTONS AND FORMS
 
 function setupEventListeners() {
-    const signupForm =
-        $("signupForm") ||
-        $("signUpForm");
+    $("signUpButton")?.addEventListener("click", signUp);
+    $("signInButton")?.addEventListener("click", signIn);
+    $("signOutButton")?.addEventListener("click", signOut);
 
-    if (signupForm) {
-        signupForm.addEventListener("submit", signUp);
-    }
+    $("authForm")?.addEventListener("submit", event => {
+        event.preventDefault();
+        signIn(event);
+    });
 
-    const signinForm =
-        $("signinForm") ||
-        $("signInForm") ||
-        $("loginForm");
+    $("expenseForm")?.addEventListener("submit", addExpense);
 
-    if (signinForm) {
-        signinForm.addEventListener("submit", signIn);
-    }
+    $("searchExpenses")?.addEventListener("input", renderExpenseList);
+    $("filterCategory")?.addEventListener("change", renderExpenseList);
+    $("filterMonth")?.addEventListener("change", renderExpenseList);
 
-    const signupButton =
-        $("signupButton") ||
-        $("signUpButton");
+    document.addEventListener("click", event => {
+        const target = event.target;
 
-    if (signupButton && !signupForm) {
-        signupButton.addEventListener("click", signUp);
-    }
+        if (!(target instanceof Element)) return;
 
-    const signinButton =
-        $("signinButton") ||
-        $("signInButton") ||
-        $("loginButton");
-
-    if (signinButton && !signinForm) {
-        signinButton.addEventListener("click", signIn);
-    }
-
-    const signoutButton =
-        $("signoutButton") ||
-        $("signOutButton") ||
-        $("logoutButton");
-
-    if (signoutButton) {
-        signoutButton.addEventListener("click", signOut);
-    }
-
-    const expenseForm = $("expenseForm");
-
-    if (expenseForm) {
-        expenseForm.addEventListener("submit", addExpense);
-    }
-
-    const searchInput = $("searchExpenses");
-
-    if (searchInput) {
-        searchInput.addEventListener("input", renderExpenseList);
-    }
-
-    const categoryFilter = $("filterCategory");
-
-    if (categoryFilter) {
-        categoryFilter.addEventListener("change", renderExpenseList);
-    }
-
-    const monthFilter = $("filterMonth");
-
-    if (monthFilter) {
-        monthFilter.addEventListener("change", renderExpenseList);
-    }
-
-    document.addEventListener("click", (event) => {
-        const deleteButton = event.target.closest(
-            "[data-delete-expense]"
-        );
+        const deleteButton = target.closest("[data-delete-expense]");
 
         if (deleteButton) {
-            deleteExpense(
-                deleteButton.dataset.deleteExpense
-            );
+            deleteExpense(deleteButton.dataset.deleteExpense);
         }
     });
 
@@ -1097,63 +1007,56 @@ function setupEventListeners() {
 // 21. APP STARTUP
 
 async function initializeApp() {
-    if (!initializeSupabase()) {
-        return;
-    }
+    if (!initializeSupabase()) return;
 
     setupEventListeners();
-
     setElementValue("expenseDate", getToday());
 
-    // Subscribe before retrieving the initial session.
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-        // Avoid starting overlapping loads for routine token refreshes.
-        if (event === "SIGNED_IN" && session?.user) {
-            currentUser = session.user;
-
-            showElement("authSection", false);
-            showElement("appSection", true);
-
-            // Load once on sign-in; avoid duplicate loading from startup.
-            if (!authInitialized) {
-                authInitialized = true;
-
-                setTimeout(() => {
-                    if (currentUser) {
-                        loadExpenses();
-                    }
-                }, 0);
-            }
-        }
-
-        if (event === "SIGNED_OUT") {
-            authInitialized = false;
-            showSignedOut();
-        }
-    });
-
     try {
-        const { data, error } =
-            await supabaseClient.auth.getSession();
+        const { data, error } = await supabaseClient.auth.getSession();
 
         if (error) {
-            setMessage(error.message, true);
             showSignedOut();
+            setMessage("Unable to check login session: " + error.message, true);
             return;
         }
 
         if (data.session?.user) {
-            currentUser = data.session.user;
-            authInitialized = true;
             await showSignedIn(data.session.user);
         } else {
             showSignedOut();
         }
+
+        supabaseClient.auth.onAuthStateChange((event, session) => {
+            if (event === "SIGNED_OUT") {
+                showSignedOut();
+                return;
+            }
+
+            if (event === "SIGNED_IN" && session?.user) {
+                // Avoid duplicate reload if the current user is already shown.
+                const sameUser =
+                    currentUser && currentUser.id === session.user.id;
+
+                currentUser = session.user;
+
+                showElement("authSection", false);
+                showElement("appSection", true);
+
+                if (!sameUser) {
+                    showSignedIn(session.user);
+                }
+
+                const emailElement = $("userEmail");
+                if (emailElement) {
+                    emailElement.textContent = session.user.email || "";
+                }
+            }
+        });
     } catch (error) {
         showSignedOut();
-
         setMessage(
-            error.message || "Unable to check your login session.",
+            error.message || "Unable to initialize PennyPilot.",
             true
         );
     }
