@@ -1515,15 +1515,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+ 
   if (elements.signInButton) {
     elements.signInButton.addEventListener("click", (event) => {
-      if (
-        elements.authForm &&
-        elements.authForm.contains(elements.signInButton)
-      ) {
-        // The form's submit handler handles this button.
-        return;
-      }
+      event.preventDefault();
+      signIn();
+    });
+  }
+
 
       event.preventDefault();
       signIn();
