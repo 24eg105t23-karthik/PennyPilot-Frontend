@@ -1,992 +1,1741 @@
+```javascript
+/* =========================================================
+   PENNYPILOT — COMPLETE script.js
+   Supabase authentication, password recovery, expenses,
+   budgets, filters, charts, insights and voice input.
+   ========================================================= */
 
 "use strict";
 
-/* =========================================================
-   PENNYPILOT — EXPENSE TRACKER
-   Supabase authentication, password recovery and expenses
-   ========================================================= */
+document.addEventListener("DOMContentLoaded", () => {
+  // -------------------------------------------------------
+  // 1. CONFIGURATION
+  // -------------------------------------------------------
 
-// 1. SUPABASE CONFIGURATION
-
-const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY =
+  const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
+  const SUPABASE_ANON_KEY =
     "sb_publishable_eHuDa1uoMvWdv-hqAWYviA_YrnQoBhg";
 
-const MONTHLY_BUDGET = 10000;
+  const TABLE_NAME = "expenses";
 
-const CATEGORIES = [
-    "Food", "Transport", "Shopping", "Education",
-    "Bills", "Health", "Entertainment", "Other"
-];
+  const supabaseLibrary = window.supabase;
 
-const $ = (id) => document.getElementById(id);
+  if (
+    !supabaseLibrary ||
+    typeof supabaseLibrary.createClient !== "function"
+  ) {
+    console.error("Supabase library did not load.");
 
-let supabaseClient = null;
-let currentUser = null;
-let expenses = [];
-let expenseChart = null;
-let recoveryMode = false;
-let handledUserId = null;
+    alert(
+      "PennyPilot could not connect because the Supabase library failed to load. Check your internet connection and script tags in index.html."
+    );
 
-function setMessage(message, isError = false) {
-    const element = $("appMessage") || $("authMessage") || $("message");
+    return;
+  }
 
-    if (!element) {
-        console[isError ? "error" : "log"](message);
-        return;
+  const supabaseClient = supabaseLibrary.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    }
+  );
+
+  // -------------------------------------------------------
+  // 2. ELEMENT HELPERS
+  // -------------------------------------------------------
+
+  const $ = (id) => document.getElementById(id);
+
+  const elements = {
+    appMessage: $("appMessage"),
+
+    authSection: $("authSection"),
+    authForm: $("authForm"),
+    authEmail: $("authEmail"),
+    authPassword: $("authPassword"),
+    signInButton: $("signInButton"),
+    signUpButton: $("signUpButton"),
+    forgotPasswordButton: $("forgotPasswordButton"),
+
+    passwordResetSection: $("passwordResetSection"),
+    resetPasswordForm: $("resetPasswordForm"),
+    newPassword: $("newPassword"),
+    confirmNewPassword: $("confirmNewPassword"),
+    saveNewPasswordButton: $("saveNewPasswordButton"),
+    cancelPasswordResetButton: $("cancelPasswordResetButton"),
+
+    appSection: $("appSection"),
+
+    expenseForm: $("expenseForm"),
+    expenseTitle: $("expenseTitle"),
+    expenseAmount: $("expenseAmount"),
+    expenseCategory: $("expenseCategory"),
+    expenseDate: $("expenseDate"),
+    expenseDescription: $("expenseDescription"),
+
+    expenseList: $("expenseList"),
+    expenseHistory: $("expenseHistory"),
+
+    totalExpenses: $("totalExpenses"),
+    monthlyExpenses: $("monthlyExpenses"),
+    remainingBudget: $("remainingBudget"),
+    budgetInput: $("budgetInput"),
+    budgetForm: $("budgetForm"),
+
+    searchInput: $("searchInput"),
+    categoryFilter: $("categoryFilter"),
+    monthFilter: $("monthFilter"),
+
+    categoryTotals: $("categoryTotals"),
+    expenseChart: $("expenseChart"),
+    insights: $("insights"),
+
+    voiceButton: $("voiceButton"),
+    voiceMessage: $("voiceMessage")
+  };
+
+  // -------------------------------------------------------
+  // 3. APPLICATION STATE
+  // -------------------------------------------------------
+
+  let currentUser = null;
+  let expenses = [];
+  let expenseChart = null;
+  let monthlyBudget = 0;
+  let isLoadingExpenses = false;
+  let isSavingExpense = false;
+  let isSavingBudget = false;
+  let isSavingPassword = false;
+  let isSigningIn = false;
+  let isSigningUp = false;
+  let isRequestingReset = false;
+  let isResetMode = false;
+
+  const currencyFormatter = new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2
+  });
+
+  const today = localDateString(new Date());
+
+  // -------------------------------------------------------
+  // 4. GENERAL HELPERS
+  // -------------------------------------------------------
+
+  function localDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function money(value) {
+    const amount = Number(value);
+
+    return currencyFormatter.format(
+      Number.isFinite(amount) ? amount : 0
+    );
+  }
+
+  function formatDate(dateValue) {
+    if (!dateValue) {
+      return "No date";
     }
 
-    element.textContent = message;
-    element.style.color = isError ? "#dc2626" : "#15803d";
-    element.setAttribute("role", "status");
-}
+    const date = new Date(`${dateValue}T00:00:00`);
 
-function escapeHTML(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    if (Number.isNaN(date.getTime())) {
+      return String(dateValue);
+    }
+
+    return date.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  }
+
+  function getCurrentMonth() {
+    return localDateString(new Date()).slice(0, 7);
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => {
+      const replacements = {
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
         '"': "&quot;",
         "'": "&#39;"
-    })[character]);
-}
+      };
 
-function formatCurrency(amount) {
-    return new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: "INR",
-        maximumFractionDigits: 2
-    }).format(Number(amount) || 0);
-}
+      return replacements[character];
+    });
+  }
 
-function getToday() {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function getCurrentMonth() {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function getElementValue(id) {
-    const element = $(id);
-    return element ? element.value.trim() : "";
-}
-
-function setElementValue(id, value) {
-    const element = $(id);
-    if (element) element.value = value;
-}
-
-function showElement(id, visible) {
-    const element = $(id);
-    if (element) element.hidden = !visible;
-}
-
-function getCredentials() {
-    const form = $("authForm");
-
-    const emailInput =
-        $("authEmail") ||
-        $("signinEmail") ||
-        $("signInEmail") ||
-        $("loginEmail") ||
-        form?.querySelector('input[type="email"]');
-
-    const passwordInput =
-        $("authPassword") ||
-        $("signinPassword") ||
-        $("signInPassword") ||
-        $("loginPassword") ||
-        form?.querySelector('input[type="password"]');
-
-    return {
-        email: emailInput?.value.trim() || "",
-        password: passwordInput?.value || ""
-    };
-}
-
-// 2. INITIALIZE SUPABASE
-
-function initializeSupabase() {
-    if (!window.supabase?.createClient) {
-        setMessage(
-            "Supabase failed to load. Check your script tags in index.html.",
-            true
-        );
-        return false;
+  function showMessage(message, type = "info") {
+    if (elements.appMessage) {
+      elements.appMessage.textContent = message;
+      elements.appMessage.dataset.type = type;
+      elements.appMessage.setAttribute("role", "status");
+      elements.appMessage.style.display = message ? "block" : "none";
     }
 
-    supabaseClient = window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_PUBLISHABLE_KEY,
-        {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: true
-            }
-        }
+    if (message) {
+      console.log(`[PennyPilot: ${type}] ${message}`);
+    }
+  }
+
+  function clearMessage() {
+    showMessage("");
+  }
+
+  function showButtonLoading(button, loading, normalText) {
+    if (!button) {
+      return;
+    }
+
+    if (loading) {
+      if (!button.dataset.originalText) {
+        button.dataset.originalText =
+          button.textContent.trim() || normalText || "Submit";
+      }
+
+      button.disabled = true;
+      button.textContent = "Please wait...";
+    } else {
+      button.disabled = false;
+      button.textContent =
+        button.dataset.originalText || normalText || button.textContent;
+
+      delete button.dataset.originalText;
+    }
+  }
+
+  function setSectionVisibility(section, visible) {
+    if (!section) {
+      return;
+    }
+
+    section.hidden = !visible;
+    section.style.display = visible ? "" : "none";
+  }
+
+  function showAuthentication() {
+    setSectionVisibility(elements.authSection, true);
+    setSectionVisibility(elements.passwordResetSection, false);
+    setSectionVisibility(elements.appSection, false);
+  }
+
+  function showDashboard() {
+    setSectionVisibility(elements.authSection, false);
+    setSectionVisibility(elements.passwordResetSection, false);
+    setSectionVisibility(elements.appSection, true);
+  }
+
+  function showPasswordReset() {
+    isResetMode = true;
+
+    setSectionVisibility(elements.authSection, false);
+    setSectionVisibility(elements.passwordResetSection, true);
+    setSectionVisibility(elements.appSection, false);
+
+    if (elements.newPassword) {
+      elements.newPassword.focus();
+    }
+
+    showMessage(
+      "Enter your new password below. Your password will be updated when you save it.",
+      "info"
     );
+  }
 
-    return true;
-}
-
-// 3. DISPLAY SECTIONS
-
-function showSignedOut() {
-    currentUser = null;
-    handledUserId = null;
-    expenses = [];
-
-    showElement("authSection", true);
-    showElement("appSection", false);
-    showElement("passwordResetSection", false);
-
-    renderDashboard();
-}
-
-async function showSignedIn(user) {
-    if (!user) return;
-
-    currentUser = user;
-    showElement("authSection", false);
-    showElement("passwordResetSection", false);
-    showElement("appSection", true);
-
-    const emailElement = $("userEmail");
-    if (emailElement) emailElement.textContent = user.email || "";
-
-    handledUserId = user.id;
-    await loadExpenses();
-}
-
-// 4. SIGN UP
-
-async function signUp(event) {
-    event?.preventDefault();
-
-    if (!supabaseClient) {
-        setMessage("Supabase is not initialized.", true);
-        return;
+  function getErrorMessage(error, fallback) {
+    if (!error) {
+      return fallback;
     }
 
-    const { email, password } = getCredentials();
+    const message = String(error.message || "");
+
+    if (/invalid login credentials/i.test(message)) {
+      return "Incorrect email or password. Please try again.";
+    }
+
+    if (/email not confirmed/i.test(message)) {
+      return "Please verify your email address before signing in.";
+    }
+
+    if (/user already registered/i.test(message)) {
+      return "An account with this email already exists. Please sign in.";
+    }
+
+    if (/password should be at least/i.test(message)) {
+      return "Your password does not meet the minimum length requirement.";
+    }
+
+    if (/rate limit/i.test(message)) {
+      return "Too many attempts. Please wait a little before trying again.";
+    }
+
+    if (/row-level security|permission denied/i.test(message)) {
+      return "Supabase denied this action. Check your table's Row Level Security policies.";
+    }
+
+    if (/failed to fetch|networkerror/i.test(message)) {
+      return "Network connection failed. Check your internet connection and Supabase URL.";
+    }
+
+    return message || fallback;
+  }
+
+  function getInputValue(element) {
+    return element ? element.value.trim() : "";
+  }
+
+  function setDefaultExpenseDate() {
+    if (elements.expenseDate && !elements.expenseDate.value) {
+      elements.expenseDate.value = today;
+    }
+  }
+
+  function getExpenseMonth(expense) {
+    return String(expense.expense_date || "").slice(0, 7);
+  }
+
+  function isCurrentMonth(expense) {
+    return getExpenseMonth(expense) === getCurrentMonth();
+  }
+
+  function getTotal(list) {
+    return list.reduce((total, expense) => {
+      return total + Number(expense.amount || 0);
+    }, 0);
+  }
+
+  function getCategory(expense) {
+    return String(expense.category || "Other").trim() || "Other";
+  }
+
+  function getCategoryBreakdown(list) {
+    const breakdown = {};
+
+    list.forEach((expense) => {
+      const category = getCategory(expense);
+
+      breakdown[category] =
+        (breakdown[category] || 0) + Number(expense.amount || 0);
+    });
+
+    return breakdown;
+  }
+
+  // -------------------------------------------------------
+  // 5. AUTHENTICATION
+  // -------------------------------------------------------
+
+  async function signIn() {
+    if (isSigningIn) {
+      return;
+    }
+
+    clearMessage();
+
+    const email = getInputValue(elements.authEmail);
+    const password = elements.authPassword
+      ? elements.authPassword.value
+      : "";
 
     if (!email || !password) {
-        setMessage("Enter your email and password.", true);
-        return;
+      showMessage("Enter your email address and password.", "error");
+      return;
+    }
+
+    if (!elements.authEmail || !elements.authEmail.checkValidity()) {
+      showMessage("Enter a valid email address.", "error");
+      return;
+    }
+
+    isSigningIn = true;
+    showButtonLoading(elements.signInButton, true, "Sign In");
+
+    try {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      currentUser = data.user || data.session?.user || null;
+
+      if (!currentUser) {
+        throw new Error("Sign-in succeeded, but no user session was returned.");
+      }
+
+      showDashboard();
+      await loadExpenses();
+
+      showMessage("You are signed in successfully.", "success");
+    } catch (error) {
+      showMessage(
+        getErrorMessage(error, "Unable to sign in. Please try again."),
+        "error"
+      );
+    } finally {
+      isSigningIn = false;
+      showButtonLoading(elements.signInButton, false, "Sign In");
+    }
+  }
+
+  async function signUp() {
+    if (isSigningUp) {
+      return;
+    }
+
+    clearMessage();
+
+    const email = getInputValue(elements.authEmail);
+    const password = elements.authPassword
+      ? elements.authPassword.value
+      : "";
+
+    if (!email || !password) {
+      showMessage("Enter an email address and password.", "error");
+      return;
+    }
+
+    if (!elements.authEmail || !elements.authEmail.checkValidity()) {
+      showMessage("Enter a valid email address.", "error");
+      return;
     }
 
     if (password.length < 6) {
-        setMessage("Your password must contain at least 6 characters.", true);
-        return;
+      showMessage("Choose a password containing at least 6 characters.", "error");
+      return;
     }
 
-    setMessage("Creating your account...");
+    isSigningUp = true;
+    showButtonLoading(elements.signUpButton, true, "Create Account");
 
     try {
-        const { data, error } = await supabaseClient.auth.signUp({
-            email,
-            password,
-            options: {
-                emailRedirectTo: window.location.origin +
-                    window.location.pathname
-            }
-        });
+      const redirectURL = window.location.origin + window.location.pathname;
 
-        if (error) {
-            setMessage("Sign-up failed: " + error.message, true);
-            return;
+      const { data, error } = await supabaseClient.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectURL
         }
+      });
 
-        if (data.session && data.user) {
-            setMessage("Account created successfully.");
-            await showSignedIn(data.user);
-        } else {
-            setMessage(
-                "Signup request accepted. Check your email for a confirmation link if email confirmation is enabled. Then sign in."
-            );
-        }
+      if (error) {
+        throw error;
+      }
+
+      if (data.session && data.user) {
+        currentUser = data.user;
+        showDashboard();
+        await loadExpenses();
+
+        showMessage("Your PennyPilot account has been created.", "success");
+      } else {
+        showMessage(
+          "Account registration submitted. Check your email for the verification link, then return here to sign in.",
+          "success"
+        );
+      }
     } catch (error) {
-        setMessage(error.message || "Unable to create your account.", true);
+      showMessage(
+        getErrorMessage(error, "Unable to create your account."),
+        "error"
+      );
+    } finally {
+      isSigningUp = false;
+      showButtonLoading(elements.signUpButton, false, "Create Account");
     }
-}
+  }
 
-// 5. SIGN IN
-
-async function signIn(event) {
-    event?.preventDefault();
-
-    if (!supabaseClient) {
-        setMessage("Supabase is not initialized.", true);
-        return;
-    }
-
-    const { email, password } = getCredentials();
-
-    if (!email || !password) {
-        setMessage("Enter your email and password.", true);
-        return;
+  async function requestPasswordReset() {
+    if (isRequestingReset) {
+      return;
     }
 
-    setMessage("Signing in...");
+    clearMessage();
 
-    try {
-        const { data, error } =
-            await supabaseClient.auth.signInWithPassword({
-                email,
-                password
-            });
-
-        if (error) {
-            setMessage("Sign-in failed: " + error.message, true);
-            return;
-        }
-
-        recoveryMode = false;
-        setMessage("Signed in successfully.");
-        await showSignedIn(data.user);
-    } catch (error) {
-        setMessage(error.message || "Unable to sign in.", true);
-    }
-}
-
-// 6. PASSWORD RECOVERY: SEND EMAIL
-
-async function sendPasswordReset(event) {
-    event?.preventDefault();
-
-    if (!supabaseClient) {
-        setMessage("Supabase is not initialized.", true);
-        return;
-    }
-
-    const { email } = getCredentials();
+    const email = getInputValue(elements.authEmail);
 
     if (!email) {
-        setMessage("Enter your account email first.", true);
-        $("authEmail")?.focus();
-        return;
+      showMessage(
+        "Enter your email address first, then click Forgot Password.",
+        "error"
+      );
+
+      if (elements.authEmail) {
+        elements.authEmail.focus();
+      }
+
+      return;
     }
 
-    const redirectUrl = window.location.origin +
-        window.location.pathname;
+    if (!elements.authEmail || !elements.authEmail.checkValidity()) {
+      showMessage("Enter a valid email address.", "error");
+      return;
+    }
 
-    setMessage("Sending password reset email...");
+    isRequestingReset = true;
+
+    showButtonLoading(
+      elements.forgotPasswordButton,
+      true,
+      "Forgot Password"
+    );
 
     try {
-        const { error } =
-            await supabaseClient.auth.resetPasswordForEmail(email, {
-                redirectTo: redirectUrl
-            });
+      const redirectURL = window.location.origin + window.location.pathname;
 
-        if (error) {
-            setMessage("Password reset failed: " + error.message, true);
-            return;
-        }
-
-        setMessage(
-            "If an account exists for this email, a password reset link will be sent. Check your inbox and spam folder."
-        );
-    } catch (error) {
-        setMessage(error.message || "Unable to send the reset email.", true);
-    }
-}
-
-// 7. PASSWORD RECOVERY: SHOW NEW PASSWORD FORM
-
-function showPasswordReset() {
-    recoveryMode = true;
-
-    showElement("authSection", false);
-    showElement("appSection", false);
-    showElement("passwordResetSection", true);
-
-    setMessage("Enter and confirm your new password.");
-}
-
-// 8. PASSWORD RECOVERY: SAVE NEW PASSWORD
-
-async function saveNewPassword(event) {
-    event?.preventDefault();
-
-    if (!supabaseClient) {
-        setMessage("Supabase is not initialized.", true);
-        return;
-    }
-
-    const newPassword = getElementValue("newPassword");
-    const confirmPassword = getElementValue("confirmNewPassword");
-
-    if (!newPassword || !confirmPassword) {
-        setMessage("Enter and confirm your new password.", true);
-        return;
-    }
-
-    if (newPassword.length < 6) {
-        setMessage("Your new password must contain at least 6 characters.", true);
-        return;
-    }
-
-    if (newPassword !== confirmPassword) {
-        setMessage("The passwords do not match.", true);
-        return;
-    }
-
-    setMessage("Updating your password...");
-
-    try {
-        const { data: sessionData, error: sessionError } =
-            await supabaseClient.auth.getSession();
-
-        if (sessionError || !sessionData.session) {
-            setMessage(
-                "Your recovery session is missing or expired. Request a new password reset email and open its latest link.",
-                true
-            );
-            return;
-        }
-
-        const { error } = await supabaseClient.auth.updateUser({
-            password: newPassword
+      const { error } =
+        await supabaseClient.auth.resetPasswordForEmail(email, {
+          redirectTo: redirectURL
         });
 
-        if (error) {
-            setMessage("Could not update password: " + error.message, true);
-            return;
-        }
+      if (error) {
+        throw error;
+      }
 
-        recoveryMode = false;
+      showMessage(
+        "If an account exists for that email, a password-reset link will be sent. Check your inbox and spam folder.",
+        "success"
+      );
+    } catch (error) {
+      showMessage(
+        getErrorMessage(error, "Unable to request a password reset."),
+        "error"
+      );
+    } finally {
+      isRequestingReset = false;
 
-        const form = $("resetPasswordForm");
-        if (form) form.reset();
+      showButtonLoading(
+        elements.forgotPasswordButton,
+        false,
+        "Forgot Password"
+      );
+    }
+  }
 
-        // Sign out so the user can sign in with the new password.
-        await supabaseClient.auth.signOut();
-        showSignedOut();
+  async function saveNewPassword(event) {
+    if (event) {
+      event.preventDefault();
+    }
 
-        setMessage(
-            "Password updated successfully. Sign in using your new password."
+    if (isSavingPassword) {
+      return;
+    }
+
+    clearMessage();
+
+    const password = elements.newPassword
+      ? elements.newPassword.value
+      : "";
+
+    const confirmation = elements.confirmNewPassword
+      ? elements.confirmNewPassword.value
+      : "";
+
+    if (!password || !confirmation) {
+      showMessage("Enter and confirm your new password.", "error");
+      return;
+    }
+
+    if (password.length < 6) {
+      showMessage("Your new password must contain at least 6 characters.", "error");
+      return;
+    }
+
+    if (password !== confirmation) {
+      showMessage("The passwords do not match.", "error");
+      return;
+    }
+
+    isSavingPassword = true;
+
+    showButtonLoading(
+      elements.saveNewPasswordButton,
+      true,
+      "Save New Password"
+    );
+
+    try {
+      const { data: sessionData, error: sessionError } =
+        await supabaseClient.auth.getSession();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      if (!sessionData.session) {
+        throw new Error(
+          "Your password-reset session is missing or expired. Request a new reset link and open it from your email."
         );
+      }
+
+      const { data, error } = await supabaseClient.auth.updateUser({
+        password
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      currentUser = data.user || sessionData.session.user;
+
+      if (elements.resetPasswordForm) {
+        elements.resetPasswordForm.reset();
+      }
+
+      isResetMode = false;
+
+      // Remove recovery tokens from the visible URL.
+      window.history.replaceState(
+        {},
+        document.title,
+        window.location.pathname
+      );
+
+      showDashboard();
+      await loadExpenses();
+
+      showMessage(
+        "Your password has been updated successfully.",
+        "success"
+      );
     } catch (error) {
-        setMessage(error.message || "Unable to update your password.", true);
+      showMessage(
+        getErrorMessage(error, "Unable to update your password."),
+        "error"
+      );
+    } finally {
+      isSavingPassword = false;
+
+      showButtonLoading(
+        elements.saveNewPasswordButton,
+        false,
+        "Save New Password"
+      );
     }
-}
+  }
 
-function cancelPasswordReset() {
-    recoveryMode = false;
-    showElement("passwordResetSection", false);
-    showElement("appSection", false);
-    showElement("authSection", true);
-    setMessage("Enter your email and new password to sign in.");
-}
+  async function cancelPasswordReset() {
+    isResetMode = false;
 
-// 9. SIGN OUT
+    if (elements.resetPasswordForm) {
+      elements.resetPasswordForm.reset();
+    }
 
-async function signOut(event) {
-    event?.preventDefault();
+    const { data } = await supabaseClient.auth.getSession();
 
-    if (!supabaseClient) return;
+    if (data.session && data.session.user) {
+      currentUser = data.session.user;
+      showDashboard();
+      await loadExpenses();
+    } else {
+      showAuthentication();
+    }
+
+    clearMessage();
+  }
+
+  async function signOut() {
+    try {
+      const { error } = await supabaseClient.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      currentUser = null;
+      expenses = [];
+      monthlyBudget = 0;
+
+      renderDashboard();
+      showAuthentication();
+
+      showMessage("You have signed out.", "success");
+    } catch (error) {
+      showMessage(
+        getErrorMessage(error, "Unable to sign out."),
+        "error"
+      );
+    }
+  }
+
+  // -------------------------------------------------------
+  // 6. EXPENSE DATABASE OPERATIONS
+  // -------------------------------------------------------
+
+  async function loadExpenses() {
+    if (!currentUser || isLoadingExpenses) {
+      return;
+    }
+
+    isLoadingExpenses = true;
 
     try {
-        const { error } = await supabaseClient.auth.signOut();
+      const { data, error } = await supabaseClient
+        .from(TABLE_NAME)
+        .select(
+          "id, user_id, title, amount, category, expense_date, description, created_at"
+        )
+        .eq("user_id", currentUser.id)
+        .order("expense_date", { ascending: false })
+        .order("created_at", { ascending: false });
 
-        if (error) {
-            setMessage("Sign-out failed: " + error.message, true);
-            return;
-        }
+      if (error) {
+        throw error;
+      }
 
-        showSignedOut();
-        setMessage("You have signed out.");
+      expenses = Array.isArray(data) ? data : [];
+
+      renderDashboard();
     } catch (error) {
-        setMessage(error.message || "Unable to sign out.", true);
+      showMessage(
+        getErrorMessage(error, "Unable to load your expenses."),
+        "error"
+      );
+    } finally {
+      isLoadingExpenses = false;
     }
-}
+  }
 
-// 10. LOAD EXPENSES
-
-async function loadExpenses() {
-    if (!supabaseClient || !currentUser) return;
-
-    try {
-        const { data, error } = await supabaseClient
-            .from("expenses")
-            .select("*")
-            .eq("user_id", currentUser.id)
-            .order("expense_date", { ascending: false })
-            .order("created_at", { ascending: false });
-
-        if (error) {
-            setMessage("Could not load expenses: " + error.message, true);
-            return;
-        }
-
-        expenses = data || [];
-        renderDashboard();
-    } catch (error) {
-        setMessage(error.message || "Unable to load expenses.", true);
-    }
-}
-
-// 11. ADD EXPENSE
-
-async function addExpense(event) {
-    event?.preventDefault();
-
-    if (!supabaseClient || !currentUser) {
-        setMessage("Please sign in before adding an expense.", true);
-        return;
+  async function addExpense(event) {
+    if (event) {
+      event.preventDefault();
     }
 
-    const title = getElementValue("expenseTitle");
-    const amountText = getElementValue("expenseAmount");
-    const category = getElementValue("expenseCategory");
-    const expenseDate = getElementValue("expenseDate") || getToday();
-    const description = getElementValue("expenseDescription");
+    if (isSavingExpense) {
+      return;
+    }
+
+    if (!currentUser) {
+      showMessage("Please sign in before adding an expense.", "error");
+      return;
+    }
+
+    const title = getInputValue(elements.expenseTitle);
+    const amountText = getInputValue(elements.expenseAmount);
+    const category = getInputValue(elements.expenseCategory) || "Other";
+    const expenseDate =
+      getInputValue(elements.expenseDate) || today;
+    const description = getInputValue(elements.expenseDescription);
+
     const amount = Number(amountText);
 
     if (!title) {
-        setMessage("Enter an expense name.", true);
-        return;
+      showMessage("Enter an expense title.", "error");
+      return;
     }
 
     if (!amountText || !Number.isFinite(amount) || amount <= 0) {
-        setMessage("Enter a valid amount greater than zero.", true);
-        return;
+      showMessage("Enter an amount greater than zero.", "error");
+      return;
     }
 
-    if (!category) {
-        setMessage("Choose an expense category.", true);
-        return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
+      showMessage("Choose a valid expense date.", "error");
+      return;
     }
 
-    const expenseData = {
+    isSavingExpense = true;
+
+    const submitButton = elements.expenseForm
+      ? elements.expenseForm.querySelector('button[type="submit"]')
+      : null;
+
+    showButtonLoading(submitButton, true, "Add Expense");
+
+    try {
+      const payload = {
         user_id: currentUser.id,
         title,
         amount,
         category,
         expense_date: expenseDate,
         description: description || null
-    };
+      };
+
+      const { data, error } = await supabaseClient
+        .from(TABLE_NAME)
+        .insert(payload)
+        .select(
+          "id, user_id, title, amount, category, expense_date, description, created_at"
+        )
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      expenses.unshift(data);
+
+      if (elements.expenseForm) {
+        elements.expenseForm.reset();
+      }
+
+      setDefaultExpenseDate();
+      renderDashboard();
+
+      showMessage("Expense added successfully.", "success");
+    } catch (error) {
+      showMessage(
+        getErrorMessage(error, "Unable to add this expense."),
+        "error"
+      );
+    } finally {
+      isSavingExpense = false;
+      showButtonLoading(submitButton, false, "Add Expense");
+    }
+  }
+
+  async function deleteExpense(expenseId) {
+    if (!currentUser) {
+      showMessage("Please sign in again.", "error");
+      return;
+    }
+
+    const expense = expenses.find(
+      (item) => String(item.id) === String(expenseId)
+    );
+
+    if (!expense) {
+      showMessage("This expense could not be found.", "error");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${expense.title}" (${money(expense.amount)})?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
 
     try {
-        setMessage("Saving expense...");
+      const { error } = await supabaseClient
+        .from(TABLE_NAME)
+        .delete()
+        .eq("id", expenseId)
+        .eq("user_id", currentUser.id);
 
-        const { data, error } = await supabaseClient
-            .from("expenses")
-            .insert([expenseData])
-            .select()
-            .single();
+      if (error) {
+        throw error;
+      }
 
-        if (error) {
-            setMessage("Could not save expense: " + error.message, true);
-            return;
-        }
+      expenses = expenses.filter(
+        (item) => String(item.id) !== String(expenseId)
+      );
 
-        expenses.unshift(data);
+      renderDashboard();
 
-        $("expenseForm")?.reset();
-        setElementValue("expenseDate", getToday());
-
-        renderDashboard();
-        setMessage("Expense added successfully.");
+      showMessage("Expense deleted successfully.", "success");
     } catch (error) {
-        setMessage(error.message || "Unable to add expense.", true);
+      showMessage(
+        getErrorMessage(error, "Unable to delete this expense."),
+        "error"
+      );
     }
-}
+  }
 
-// 12. DELETE EXPENSE
+  // -------------------------------------------------------
+  // 7. BUDGET MANAGEMENT
+  // -------------------------------------------------------
 
-async function deleteExpense(id) {
-    if (!supabaseClient || !currentUser) {
-        setMessage("Please sign in first.", true);
-        return;
+  function getBudgetStorageKey() {
+    return currentUser
+      ? `pennypilot_budget_${currentUser.id}`
+      : null;
+  }
+
+  function loadBudget() {
+    monthlyBudget = 0;
+
+    const key = getBudgetStorageKey();
+
+    if (key) {
+      try {
+        const stored = window.localStorage.getItem(key);
+
+        if (stored !== null) {
+          const value = Number(stored);
+
+          monthlyBudget =
+            Number.isFinite(value) && value >= 0 ? value : 0;
+        }
+      } catch (error) {
+        console.warn("Unable to read local budget:", error);
+      }
     }
 
-    const expenseId = Number(id);
+    if (elements.budgetInput) {
+      elements.budgetInput.value =
+        monthlyBudget > 0 ? String(monthlyBudget) : "";
+    }
+  }
 
-    if (!Number.isFinite(expenseId)) {
-        setMessage("Invalid expense ID.", true);
-        return;
+  function saveBudget(event) {
+    if (event) {
+      event.preventDefault();
     }
 
-    if (!window.confirm("Are you sure you want to delete this expense?")) {
-        return;
+    if (isSavingBudget) {
+      return;
     }
+
+    if (!currentUser) {
+      showMessage("Please sign in before setting a budget.", "error");
+      return;
+    }
+
+    const valueText = getInputValue(elements.budgetInput);
+    const value = Number(valueText);
+
+    if (
+      valueText === "" ||
+      !Number.isFinite(value) ||
+      value < 0
+    ) {
+      showMessage(
+        "Enter a valid monthly budget of zero or more.",
+        "error"
+      );
+      return;
+    }
+
+    isSavingBudget = true;
 
     try {
-        const { error } = await supabaseClient
-            .from("expenses")
-            .delete()
-            .eq("id", expenseId)
-            .eq("user_id", currentUser.id);
+      const key = getBudgetStorageKey();
 
-        if (error) {
-            setMessage("Could not delete expense: " + error.message, true);
-            return;
-        }
+      if (key) {
+        window.localStorage.setItem(key, String(value));
+      }
 
-        expenses = expenses.filter(
-            (expense) => Number(expense.id) !== expenseId
-        );
+      monthlyBudget = value;
 
-        renderDashboard();
-        setMessage("Expense deleted successfully.");
+      renderDashboard();
+
+      showMessage("Monthly budget saved.", "success");
     } catch (error) {
-        setMessage(error.message || "Unable to delete expense.", true);
+      showMessage(
+        "Could not save your budget in this browser. Check your browser storage settings.",
+        "error"
+      );
+    } finally {
+      isSavingBudget = false;
     }
-}
+  }
 
-// 13. FILTER EXPENSES
+  // -------------------------------------------------------
+  // 8. FILTERING AND SEARCH
+  // -------------------------------------------------------
 
-function getFilteredExpenses() {
-    let filtered = [...expenses];
+  function getFilteredExpenses() {
+    const search = getInputValue(elements.searchInput).toLowerCase();
 
-    const search = getElementValue("searchExpenses").toLowerCase();
-    const category = getElementValue("filterCategory");
-    const month = getElementValue("filterMonth");
+    const selectedCategory = elements.categoryFilter
+      ? elements.categoryFilter.value
+      : "";
 
-    if (search) {
-        filtered = filtered.filter((expense) =>
-            String(expense.title || "").toLowerCase().includes(search) ||
-            String(expense.description || "").toLowerCase().includes(search)
+    const selectedMonth = elements.monthFilter
+      ? elements.monthFilter.value
+      : "";
+
+    return expenses.filter((expense) => {
+      const title = String(expense.title || "").toLowerCase();
+      const category = getCategory(expense).toLowerCase();
+      const description = String(
+        expense.description || ""
+      ).toLowerCase();
+
+      const matchesSearch =
+        !search ||
+        title.includes(search) ||
+        category.includes(search) ||
+        description.includes(search);
+
+      const matchesCategory =
+        !selectedCategory ||
+        selectedCategory === "all" ||
+        getCategory(expense) === selectedCategory;
+
+      const matchesMonth =
+        !selectedMonth ||
+        selectedMonth === "all" ||
+        getExpenseMonth(expense) === selectedMonth;
+
+      return matchesSearch && matchesCategory && matchesMonth;
+    });
+  }
+
+  function updateFilterOptions() {
+    if (elements.categoryFilter) {
+      const previousCategory = elements.categoryFilter.value;
+
+      const categories = [
+        ...new Set(expenses.map(getCategory))
+      ].sort((a, b) => a.localeCompare(b));
+
+      const existingHasAll = Array.from(
+        elements.categoryFilter.options
+      ).some((option) => {
+        return option.value === "all";
+      });
+
+      const allLabel = existingHasAll ? "All Categories" : "All Categories";
+
+      elements.categoryFilter.replaceChildren();
+
+      const allOption = document.createElement("option");
+      allOption.value = "all";
+      allOption.textContent = allLabel;
+
+      elements.categoryFilter.appendChild(allOption);
+
+      categories.forEach((category) => {
+        const option = document.createElement("option");
+        option.value = category;
+        option.textContent = category;
+        elements.categoryFilter.appendChild(option);
+      });
+
+      const categoryExists = categories.includes(previousCategory);
+
+      elements.categoryFilter.value =
+        categoryExists ? previousCategory : "all";
+    }
+
+    if (elements.monthFilter) {
+      const previousMonth = elements.monthFilter.value;
+
+      const months = [
+        ...new Set(
+          expenses
+            .map(getExpenseMonth)
+            .filter((month) => /^\d{4}-\d{2}$/.test(month))
+        )
+      ].sort((a, b) => b.localeCompare(a));
+
+      elements.monthFilter.replaceChildren();
+
+      const allOption = document.createElement("option");
+      allOption.value = "all";
+      allOption.textContent = "All Months";
+      elements.monthFilter.appendChild(allOption);
+
+      months.forEach((month) => {
+        const [year, monthNumber] = month.split("-");
+        const date = new Date(
+          Number(year),
+          Number(monthNumber) - 1,
+          1
         );
+
+        const option = document.createElement("option");
+        option.value = month;
+        option.textContent = date.toLocaleDateString("en-IN", {
+          month: "long",
+          year: "numeric"
+        });
+
+        elements.monthFilter.appendChild(option);
+      });
+
+      const monthExists = months.includes(previousMonth);
+
+      elements.monthFilter.value =
+        monthExists ? previousMonth : "all";
+    }
+  }
+
+  // -------------------------------------------------------
+  // 9. DASHBOARD SUMMARY
+  // -------------------------------------------------------
+
+  function renderSummary() {
+    const total = getTotal(expenses);
+
+    const currentMonthExpenses = expenses.filter(isCurrentMonth);
+    const currentMonthTotal = getTotal(currentMonthExpenses);
+
+    const remaining = monthlyBudget - currentMonthTotal;
+
+    if (elements.totalExpenses) {
+      elements.totalExpenses.textContent = money(total);
     }
 
-    if (category && category !== "all") {
-        filtered = filtered.filter(
-            (expense) => expense.category === category
-        );
+    if (elements.monthlyExpenses) {
+      elements.monthlyExpenses.textContent = money(currentMonthTotal);
     }
 
-    if (month) {
-        filtered = filtered.filter(
-            (expense) => String(expense.expense_date || "").slice(0, 7) === month
-        );
+    if (elements.remainingBudget) {
+      elements.remainingBudget.textContent = money(
+        monthlyBudget > 0 ? remaining : 0
+      );
+
+      elements.remainingBudget.dataset.status =
+        monthlyBudget === 0
+          ? "unset"
+          : remaining < 0
+            ? "over-budget"
+            : "within-budget";
+    }
+  }
+
+  // -------------------------------------------------------
+  // 10. EXPENSE HISTORY
+  // -------------------------------------------------------
+
+  function renderExpenseList() {
+    const target = elements.expenseList || elements.expenseHistory;
+
+    if (!target) {
+      return;
     }
 
-    return filtered;
-}
+    const filteredExpenses = getFilteredExpenses();
 
-// 14. RENDER EXPENSE LIST
+    if (filteredExpenses.length === 0) {
+      target.innerHTML =
+        '<p class="empty-state">No expenses found. Add an expense or change your filters.</p>';
 
-function renderExpenseList() {
-    const container = $("expenseList");
-    if (!container) return;
-
-    const filtered = getFilteredExpenses();
-
-    if (!filtered.length) {
-        container.innerHTML = "<p>No expenses found.</p>";
-        return;
+      return;
     }
 
-    container.innerHTML = filtered.map((expense) => `
-        <div class="expense-item" data-expense-id="${escapeHTML(expense.id)}">
+    target.innerHTML = filteredExpenses
+      .map((expense) => {
+        const title = escapeHTML(expense.title);
+        const category = escapeHTML(getCategory(expense));
+        const description = escapeHTML(expense.description || "");
+        const date = escapeHTML(formatDate(expense.expense_date));
+        const amount = escapeHTML(money(expense.amount));
+        const id = escapeHTML(expense.id);
+
+        return `
+          <article class="expense-item" data-expense-id="${id}">
             <div class="expense-details">
-                <strong>${escapeHTML(expense.title)}</strong>
-                <p>${escapeHTML(expense.category)}</p>
-                <small>${escapeHTML(expense.expense_date || "")}</small>
-                ${expense.description
-                    ? `<p>${escapeHTML(expense.description)}</p>`
-                    : ""}
+              <h3>${title}</h3>
+              <p class="expense-category">${category}</p>
+              ${
+                description
+                  ? `<p class="expense-description">${description}</p>`
+                  : ""
+              }
+              <small class="expense-date">${date}</small>
             </div>
             <div class="expense-actions">
-                <strong>${formatCurrency(expense.amount)}</strong>
-                <button
-                    type="button"
-                    class="delete-expense"
-                    data-delete-expense="${escapeHTML(expense.id)}"
-                    aria-label="Delete ${escapeHTML(expense.title)}"
-                >Delete</button>
+              <strong class="expense-amount">${amount}</strong>
+              <button
+                type="button"
+                class="delete-expense-button"
+                data-delete-expense="${id}"
+                aria-label="Delete ${title}"
+              >
+                Delete
+              </button>
             </div>
-        </div>
-    `).join("");
-}
+          </article>
+        `;
+      })
+      .join("");
+  }
 
-// 15. SUMMARY AND BUDGET
+  // -------------------------------------------------------
+  // 11. CATEGORY TOTALS
+  // -------------------------------------------------------
 
-function renderSummary() {
-    const total = expenses.reduce(
-        (sum, expense) => sum + Number(expense.amount || 0), 0
+  function renderCategoryTotals() {
+    const target = elements.categoryTotals;
+
+    if (!target) {
+      return;
+    }
+
+    const breakdown = getCategoryBreakdown(
+      expenses.filter(isCurrentMonth)
     );
 
-    const todayTotal = expenses
-        .filter((expense) => expense.expense_date === getToday())
-        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+    const entries = Object.entries(breakdown).sort(
+      (a, b) => b[1] - a[1]
+    );
 
-    const monthTotal = expenses
-        .filter((expense) =>
-            String(expense.expense_date || "").startsWith(getCurrentMonth())
-        )
-        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+    if (entries.length === 0) {
+      target.innerHTML =
+        '<p class="empty-state">No category expenses for this month yet.</p>';
 
-    const values = {
-        totalExpenses: formatCurrency(total),
-        todayExpenses: formatCurrency(todayTotal),
-        monthlyExpenses: formatCurrency(monthTotal),
-        expenseCount: String(expenses.length)
-    };
-
-    Object.entries(values).forEach(([id, value]) => {
-        if ($(id)) $(id).textContent = value;
-    });
-
-    if ($("budgetRemaining")) {
-        $("budgetRemaining").textContent =
-            formatCurrency(MONTHLY_BUDGET - monthTotal);
+      return;
     }
 
-    const percentage = Math.min(100, (monthTotal / MONTHLY_BUDGET) * 100);
+    const maxAmount = Math.max(
+      ...entries.map((entry) => entry[1]),
+      1
+    );
 
-    if ($("budgetProgress")) {
-        $("budgetProgress").style.width = `${percentage}%`;
-    }
-
-    if ($("budgetProgressTrack")) {
-        $("budgetProgressTrack").setAttribute(
-            "aria-valuenow", String(Math.round(percentage))
+    target.innerHTML = entries
+      .map(([category, amount]) => {
+        const percentage = Math.max(
+          0,
+          Math.min(100, (amount / maxAmount) * 100)
         );
+
+        return `
+          <div class="category-total">
+            <div class="category-total-header">
+              <span>${escapeHTML(category)}</span>
+              <strong>${escapeHTML(money(amount))}</strong>
+            </div>
+            <div
+              class="category-progress-track"
+              role="progressbar"
+              aria-label="${escapeHTML(category)} spending"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="${Math.round(percentage)}"
+            >
+              <div
+                class="category-progress-fill"
+                style="width:${percentage}%"
+              ></div>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  // -------------------------------------------------------
+  // 12. EXPENSE CHART
+  // -------------------------------------------------------
+
+  function renderExpenseChart() {
+    const canvas = elements.expenseChart;
+
+    if (!canvas) {
+      return;
     }
 
-    if ($("budgetMessage")) {
-        $("budgetMessage").textContent =
-            monthTotal > MONTHLY_BUDGET
-                ? "You have exceeded your monthly budget."
-                : "You are within your monthly budget.";
-    }
-}
-
-// 16. CATEGORY TOTALS AND CHART
-
-function getCategoryTotals() {
-    const totals = {};
-
-    CATEGORIES.forEach((category) => {
-        totals[category] = 0;
-    });
-
-    expenses.forEach((expense) => {
-        const category = expense.category || "Other";
-        totals[category] = (totals[category] || 0) +
-            Number(expense.amount || 0);
-    });
-
-    return totals;
-}
-
-function renderCategoryTotals() {
-    const container = $("categoryTotals");
-    if (!container) return;
-
-    const nonZero = Object.entries(getCategoryTotals())
-        .filter(([, amount]) => amount > 0)
-        .sort((a, b) => b[1] - a[1]);
-
-    if (!nonZero.length) {
-        container.innerHTML = "<p>No category spending yet.</p>";
-        return;
+    if (typeof window.Chart !== "function") {
+      console.warn("Chart.js is not loaded.");
+      return;
     }
 
-    container.innerHTML = nonZero.map(([category, amount]) => `
-        <div class="category-total">
-            <span>${escapeHTML(category)}</span>
-            <strong>${formatCurrency(amount)}</strong>
-        </div>
-    `).join("");
-}
+    const breakdown = getCategoryBreakdown(
+      expenses.filter(isCurrentMonth)
+    );
 
-function renderChart() {
-    const canvas = $("expenseChart");
-    if (!canvas || typeof window.Chart === "undefined") return;
+    const entries = Object.entries(breakdown).sort(
+      (a, b) => b[1] - a[1]
+    );
 
     if (expenseChart) {
-        expenseChart.destroy();
-        expenseChart = null;
+      expenseChart.destroy();
+      expenseChart = null;
     }
 
-    const totals = getCategoryTotals();
-    const labels = Object.keys(totals).filter(
-        (category) => totals[category] > 0
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    expenseChart = new window.Chart(context, {
+      type: "doughnut",
+      data: {
+        labels: entries.map((entry) => entry[0]),
+        datasets: [
+          {
+            label: "Expenses",
+            data: entries.map((entry) => entry[1]),
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "bottom"
+          },
+          tooltip: {
+            callbacks: {
+              label(contextItem) {
+                return `${contextItem.label}: ${money(
+                  contextItem.parsed
+                )}`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // -------------------------------------------------------
+  // 13. SPENDING INSIGHTS
+  // -------------------------------------------------------
+
+  function renderInsights() {
+    const target = elements.insights;
+
+    if (!target) {
+      return;
+    }
+
+    const currentMonthExpenses = expenses.filter(isCurrentMonth);
+    const total = getTotal(currentMonthExpenses);
+    const breakdown = getCategoryBreakdown(currentMonthExpenses);
+    const entries = Object.entries(breakdown).sort(
+      (a, b) => b[1] - a[1]
     );
 
-    if (!labels.length) {
-        return;
-    }
+    const messages = [];
 
-    expenseChart = new window.Chart(canvas, {
-        type: "doughnut",
-        data: {
-            labels,
-            datasets: [{
-                label: "Expenses",
-                data: labels.map((category) => totals[category]),
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: "bottom" },
-                tooltip: {
-                    callbacks: {
-                        label(context) {
-                            return `${context.label}: ${formatCurrency(context.raw)}`;
-                        }
-                    }
-                }
-            }
+    if (currentMonthExpenses.length === 0) {
+      messages.push("Start tracking your expenses to see your insights.");
+    } else {
+      messages.push(
+        `You recorded ${currentMonthExpenses.length} expense${currentMonthExpenses.length === 1 ? "" : "s"} this month.`
+      );
+
+      if (entries.length > 0) {
+        messages.push(
+          `Your highest-spending category is ${entries[0][0]} at ${money(entries[0][1])}.`
+        );
+      }
+
+      if (monthlyBudget > 0) {
+        const remaining = monthlyBudget - total;
+
+        if (remaining < 0) {
+          messages.push(
+            `You are ${money(Math.abs(remaining))} over your monthly budget.`
+          );
+        } else {
+          messages.push(
+            `You have ${money(remaining)} remaining in your monthly budget.`
+          );
         }
-    });
-}
-
-// 17. SPENDING INSIGHTS
-
-function renderInsights() {
-    const container = $("insights");
-    if (!container) return;
-
-    if (!expenses.length) {
-        container.textContent =
-            "Add your first expense to see your spending insights.";
-        return;
+      } else {
+        messages.push(
+          "Set a monthly budget to compare your spending with your target."
+        );
+      }
     }
 
-    const totals = getCategoryTotals();
-    const highestCategory = Object.entries(totals)
-        .sort((a, b) => b[1] - a[1])[0];
+    target.innerHTML = messages
+      .map((message) => `<p>${escapeHTML(message)}</p>`)
+      .join("");
+  }
 
-    const monthlyTotal = expenses
-        .filter((expense) =>
-            String(expense.expense_date || "").startsWith(getCurrentMonth())
-        )
-        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  // -------------------------------------------------------
+  // 14. RENDER ALL DASHBOARD SECTIONS
+  // -------------------------------------------------------
 
-    const budgetMessage = monthlyTotal > MONTHLY_BUDGET
-        ? "Your monthly spending is above your ₹10,000 budget."
-        : `You have ${formatCurrency(MONTHLY_BUDGET - monthlyTotal)} remaining in your monthly budget.`;
-
-    container.textContent =
-        `Your highest-spending category is ${highestCategory[0]} (${formatCurrency(highestCategory[1])}). ${budgetMessage}`;
-}
-
-function renderDashboard() {
+  function renderDashboard() {
+    updateFilterOptions();
     renderSummary();
     renderExpenseList();
     renderCategoryTotals();
-    renderChart();
+    renderExpenseChart();
     renderInsights();
-}
+  }
 
-// 18. QUICK ADD
+  // -------------------------------------------------------
+  // 15. QUICK-ADD EXPENSE BUTTONS
+  // -------------------------------------------------------
 
-function setupQuickCash() {
-    document.querySelectorAll("[data-quick-cash]").forEach((button) => {
-        button.addEventListener("click", () => {
-            setElementValue("expenseAmount", button.dataset.quickCash);
+  function handleQuickAdd(button) {
+    if (!currentUser) {
+      showMessage("Please sign in before adding an expense.", "error");
+      return;
+    }
 
-            $("expenseForm")?.scrollIntoView({
-                behavior: "smooth",
-                block: "center"
-            });
-        });
-    });
-}
+    const amount = Number(
+      button.dataset.quickCash ||
+      button.dataset.amount ||
+      0
+    );
 
-// 19. VOICE INPUT
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showMessage("This quick-add button has an invalid amount.", "error");
+      return;
+    }
 
-function setupVoiceInput() {
-    const button = $("voiceButton");
-    const message = $("voiceMessage");
-    if (!button) return;
+    if (elements.expenseAmount) {
+      elements.expenseAmount.value = String(amount);
+    }
 
+    if (elements.expenseTitle && !elements.expenseTitle.value.trim()) {
+      elements.expenseTitle.value = "Quick expense";
+    }
+
+    setDefaultExpenseDate();
+
+    if (elements.expenseForm) {
+      elements.expenseForm.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+    }
+
+    if (elements.expenseTitle) {
+      elements.expenseTitle.focus();
+    }
+
+    showMessage(
+      `${money(amount)} entered. Choose the category and click Add Expense.`,
+      "info"
+    );
+  }
+
+  // -------------------------------------------------------
+  // 16. VOICE INPUT
+  // -------------------------------------------------------
+
+  function setVoiceMessage(message) {
+    if (elements.voiceMessage) {
+      elements.voiceMessage.textContent = message;
+    }
+  }
+
+  function startVoiceInput() {
     const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-        button.disabled = true;
-        if (message) {
-            message.textContent = "Voice input is not supported in this browser.";
-        }
+      setVoiceMessage(
+        "Voice input is not supported in this browser. Try a recent version of Chrome."
+      );
+      return;
+    }
+
+    if (!currentUser) {
+      setVoiceMessage("Please sign in before using voice input.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = "en-IN";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    setVoiceMessage("Listening... Say the expense title and amount.");
+
+    recognition.onresult = (event) => {
+      const transcript =
+        event.results?.[0]?.[0]?.transcript?.trim() || "";
+
+      if (!transcript) {
+        setVoiceMessage("I could not recognize your voice. Please try again.");
         return;
-    }
+      }
 
-    button.addEventListener("click", () => {
-        const recognition = new SpeechRecognition();
-        recognition.lang = "en-IN";
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
+      if (elements.expenseTitle) {
+        elements.expenseTitle.value = transcript;
+      }
 
-        if (message) message.textContent = "Listening...";
+      // If the spoken words include a numeric amount, fill it in.
+      const amountMatch = transcript.match(
+        /(?:₹|rs\.?|rupees?\s*)\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:rupees?|rs\.?)/i
+      );
 
-        recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
+      if (amountMatch && elements.expenseAmount) {
+        const spokenAmount = amountMatch[1] || amountMatch[2];
 
-            if (message) message.textContent = `Heard: ${transcript}`;
-
-            const amountMatch = transcript.match(
-                /(?:₹\s*|rs\.?\s*|rupees?\s*)?(\d+(?:\.\d+)?)(?:\s*rupees?)?/i
-            );
-
-            if (amountMatch) {
-                setElementValue("expenseAmount", amountMatch[1]);
-            }
-
-            const lower = transcript.toLowerCase();
-            const categoryWords = {
-                food: "Food",
-                transport: "Transport",
-                travel: "Transport",
-                shopping: "Shopping",
-                education: "Education",
-                bills: "Bills",
-                health: "Health",
-                entertainment: "Entertainment"
-            };
-
-            for (const [word, category] of Object.entries(categoryWords)) {
-                if (lower.includes(word)) {
-                    setElementValue("expenseCategory", category);
-                    break;
-                }
-            }
-
-            if (amountMatch) {
-                const title = transcript
-                    .replace(amountMatch[0], "")
-                    .replace(/\b(rupees?|rs|for|spent|expense|on|of|in)\b/gi, "")
-                    .trim();
-
-                if (title) setElementValue("expenseTitle", title);
-            }
-        };
-
-        recognition.onerror = (event) => {
-            if (message) message.textContent = `Voice input error: ${event.error}`;
-        };
-
-        try {
-            recognition.start();
-        } catch {
-            if (message) message.textContent = "Could not start voice input. Try again.";
+        if (spokenAmount) {
+          elements.expenseAmount.value = spokenAmount;
         }
-    });
-}
+      }
 
-// 20. EVENT LISTENERS
+      setDefaultExpenseDate();
 
-function setupEventListeners() {
-    $("signUpButton")?.addEventListener("click", signUp);
-    $("signInButton")?.addEventListener("click", signIn);
-    $("signOutButton")?.addEventListener("click", signOut);
+      setVoiceMessage(
+        `Recognized: "${transcript}". Check the title and amount, then save the expense.`
+      );
 
-    $("forgotPasswordButton")?.addEventListener("click", sendPasswordReset);
-    $("resetPasswordForm")?.addEventListener("submit", saveNewPassword);
-    $("cancelPasswordResetButton")?.addEventListener("click", cancelPasswordReset);
+      if (elements.expenseTitle) {
+        elements.expenseTitle.focus();
+      }
+    };
 
-    $("expenseForm")?.addEventListener("submit", addExpense);
-    $("searchExpenses")?.addEventListener("input", renderExpenseList);
-    $("filterCategory")?.addEventListener("change", renderExpenseList);
-    $("filterMonth")?.addEventListener("change", renderExpenseList);
+    recognition.onerror = (event) => {
+      const error = event.error || "unknown error";
 
-    document.addEventListener("click", (event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
+      setVoiceMessage(
+        error === "not-allowed"
+          ? "Microphone access was denied. Allow microphone permission in your browser settings."
+          : `Voice input failed (${error}). Please try again.`
+      );
+    };
 
-        const deleteButton = target.closest("[data-delete-expense]");
-        if (deleteButton) {
-            deleteExpense(deleteButton.dataset.deleteExpense);
-        }
-    });
-
-    setupQuickCash();
-    setupVoiceInput();
-}
-
-// 21. STARTUP AND RECOVERY SESSION DETECTION
-
-async function initializeApp() {
-    if (!initializeSupabase()) return;
-
-    setupEventListeners();
-    setElementValue("expenseDate", getToday());
-
-    // The recovery email must redirect back to this deployed page.
-    // Supabase exchanges the recovery token and creates a session.
-    const url = new URL(window.location.href);
-    const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
-    const queryType = url.searchParams.get("type");
-    const hashType = hash.get("type");
-
-    const isRecoveryLink =
-        queryType === "recovery" || hashType === "recovery";
-
-    if (isRecoveryLink) {
-        recoveryMode = true;
-    }
-
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        if (event === "PASSWORD_RECOVERY") {
-            recoveryMode = true;
-            showPasswordReset();
-            return;
-        }
-
-        if (recoveryMode) {
-            showPasswordReset();
-            return;
-        }
-
-        if (event === "SIGNED_OUT") {
-            showSignedOut();
-            return;
-        }
-
-        if (
-            (event === "SIGNED_IN" || event === "INITIAL_SESSION") &&
-            session?.user &&
-            handledUserId !== session.user.id
-        ) {
-            await showSignedIn(session.user);
-        }
-    });
+    recognition.onend = () => {
+      if (
+        elements.voiceMessage &&
+        elements.voiceMessage.textContent === "Listening..."
+      ) {
+        setVoiceMessage("Voice input ended. Try again if needed.");
+      }
+    };
 
     try {
-        const { data, error } = await supabaseClient.auth.getSession();
-
-        if (error) {
-            setMessage("Session error: " + error.message, true);
-            showSignedOut();
-            return;
-        }
-
-        if (recoveryMode) {
-            if (data.session) {
-                showPasswordReset();
-            } else {
-                setMessage(
-                    "This recovery link is expired or invalid. Request a new password reset email and open the newest link.",
-                    true
-                );
-                showElement("authSection", true);
-                showElement("appSection", false);
-                showElement("passwordResetSection", false);
-            }
-            return;
-        }
-
-        if (data.session?.user) {
-            await showSignedIn(data.session.user);
-        } else {
-            showSignedOut();
-        }
+      recognition.start();
     } catch (error) {
-        showSignedOut();
-        setMessage(error.message || "Unable to check your session.", true);
+      console.error("Voice recognition error:", error);
+      setVoiceMessage("Could not start voice input. Please try again.");
     }
-}
+  }
 
-document.addEventListener("DOMContentLoaded", initializeApp);
+  // -------------------------------------------------------
+  // 17. EVENT LISTENERS
+  // -------------------------------------------------------
+
+  if (elements.authForm) {
+    elements.authForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      signIn();
+    });
+  }
+
+  if (elements.signInButton) {
+    elements.signInButton.addEventListener("click", (event) => {
+      if (
+        elements.authForm &&
+        elements.authForm.contains(elements.signInButton)
+      ) {
+        // The form's submit handler handles this button.
+        return;
+      }
+
+      event.preventDefault();
+      signIn();
+    });
+  }
+
+  if (elements.signUpButton) {
+    elements.signUpButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      signUp();
+    });
+  }
+
+  if (elements.forgotPasswordButton) {
+    elements.forgotPasswordButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      requestPasswordReset();
+    });
+  }
+
+  if (elements.resetPasswordForm) {
+    elements.resetPasswordForm.addEventListener(
+      "submit",
+      saveNewPassword
+    );
+  }
+
+  if (elements.cancelPasswordResetButton) {
+    elements.cancelPasswordResetButton.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        cancelPasswordReset();
+      }
+    );
+  }
+
+  if (elements.expenseForm) {
+    elements.expenseForm.addEventListener("submit", addExpense);
+  }
+
+  if (elements.budgetForm) {
+    elements.budgetForm.addEventListener("submit", saveBudget);
+  }
+
+  if (elements.searchInput) {
+    elements.searchInput.addEventListener("input", renderExpenseList);
+  }
+
+  if (elements.categoryFilter) {
+    elements.categoryFilter.addEventListener("change", renderExpenseList);
+  }
+
+  if (elements.monthFilter) {
+    elements.monthFilter.addEventListener("change", renderExpenseList);
+  }
+
+  // Delegated click handler supports expense rows created dynamically.
+  const expenseContainer = elements.expenseList || elements.expenseHistory;
+
+  if (expenseContainer) {
+    expenseContainer.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-delete-expense]");
+
+      if (!button || !expenseContainer.contains(button)) {
+        return;
+      }
+
+      deleteExpense(button.dataset.deleteExpense);
+    });
+  }
+
+  document.querySelectorAll("[data-quick-cash], [data-amount]").forEach(
+    (button) => {
+      button.addEventListener("click", () => handleQuickAdd(button));
+    }
+  );
+
+  if (elements.voiceButton) {
+    elements.voiceButton.addEventListener("click", startVoiceInput);
+  }
+
+  // Support an optional sign-out button if it exists in the HTML.
+  const signOutButton = $("signOutButton");
+
+  if (signOutButton) {
+    signOutButton.addEventListener("click", signOut);
+  }
+
+  // Support an optional manual refresh button if it exists.
+  const refreshButton = $("refreshExpensesButton");
+
+  if (refreshButton) {
+    refreshButton.addEventListener("click", loadExpenses);
+  }
+
+  // -------------------------------------------------------
+  // 18. INITIAL SESSION AND PASSWORD RECOVERY
+  // -------------------------------------------------------
+
+  setDefaultExpenseDate();
+
+  // Detect a recovery link before showing the normal screen.
+  const urlParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(
+    window.location.hash.replace(/^#/, "")
+  );
+
+  const recoveryRequested =
+    urlParams.get("type") === "recovery" ||
+    hashParams.get("type") === "recovery";
+
+  if (recoveryRequested) {
+    showPasswordReset();
+  } else {
+    showAuthentication();
+  }
+
+  // Keep this callback synchronous. Supabase warns against
+  // awaiting other Supabase auth methods inside this callback.
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === "PASSWORD_RECOVERY") {
+      isResetMode = true;
+      showPasswordReset();
+      return;
+    }
+
+    if (session && session.user) {
+      currentUser = session.user;
+
+      if (!isResetMode) {
+        showDashboard();
+        loadBudget();
+        loadExpenses();
+      }
+
+      return;
+    }
+
+    if (
+      event === "SIGNED_OUT" ||
+      event === "INITIAL_SESSION"
+    ) {
+      currentUser = null;
+      expenses = [];
+      monthlyBudget = 0;
+
+      if (!isResetMode) {
+        renderDashboard();
+        showAuthentication();
+      }
+    }
+  });
+
+  // Get the current session on initial page load.
+  // This is separate from the auth-state callback.
+  async function initializeSession() {
+    try {
+      const { data, error } = await supabaseClient.auth.getSession();
+
+      if (error) {
+        throw error;
+      }
+
+      const session = data.session;
+
+      if (session && session.user) {
+        currentUser = session.user;
+
+        if (!isResetMode) {
+          loadBudget();
+          showDashboard();
+          await loadExpenses();
+        }
+      } else if (!isResetMode) {
+        currentUser = null;
+        showAuthentication();
+      }
+    } catch (error) {
+      console.error("Session initialization error:", error);
+
+      if (!isResetMode) {
+        showAuthentication();
+      }
+
+      showMessage(
+        getErrorMessage(error, "Could not restore your login session."),
+        "error"
+      );
+    }
+  }
+
+  initializeSession();
+
+  // -------------------------------------------------------
+  // 19. OPTIONAL GLOBAL HELPERS FOR EXISTING HTML BUTTONS
+  // -------------------------------------------------------
+
+  // Some HTML designs may call these functions with onclick.
+  // Event listeners above are preferred.
+  window.PennyPilot = {
+    signIn,
+    signUp,
+    requestPasswordReset,
+    saveNewPassword,
+    signOut,
+    loadExpenses,
+    addExpense,
+    deleteExpense,
+    saveBudget,
+    renderDashboard
+  };
+
+});
+```
