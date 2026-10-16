@@ -2,11 +2,11 @@
 "use strict";
 
 /* =========================================================
-   PENNYPILOT — SMART EXPENSE TRACKER
-   Supabase authentication, expense storage and dashboard
+   PENNYPILOT — COMPLETE EXPENSE TRACKER
+   Authentication, Supabase database, dashboard and charts
    ========================================================= */
 
-// 1. SUPABASE CONFIGURATION
+// 1. CONFIGURATION
 
 const SUPABASE_URL = "https://dqcjhbiduogttljgfkau.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -15,27 +15,21 @@ const SUPABASE_PUBLISHABLE_KEY =
 const MONTHLY_BUDGET = 10000;
 
 const CATEGORIES = [
-    "Food",
-    "Transport",
-    "Shopping",
-    "Education",
-    "Bills",
-    "Health",
-    "Entertainment",
-    "Other"
+    "Food", "Transport", "Shopping", "Education",
+    "Bills", "Health", "Entertainment", "Other"
 ];
 
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
 let supabaseClient = null;
 let currentUser = null;
 let expenses = [];
 let expenseChart = null;
-let authRequestInProgress = false;
-let expenseRequestInProgress = false;
+let authBusy = false;
+let expenseBusy = false;
 
 
-// 2. GENERAL HELPERS
+// 2. HELPERS
 
 function setMessage(message, isError = false) {
     const element = $("appMessage");
@@ -51,7 +45,7 @@ function setMessage(message, isError = false) {
 }
 
 function escapeHTML(value) {
-    const entities = {
+    const replacements = {
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
@@ -59,23 +53,26 @@ function escapeHTML(value) {
         "'": "&#39;"
     };
 
-    return String(value ?? "").replace(/[&<>"']/g, character => entities[character]);
+    return String(value ?? "").replace(
+        /[&<>"']/g,
+        character => replacements[character]
+    );
 }
 
-function formatCurrency(amount) {
+function formatCurrency(value) {
     return new Intl.NumberFormat("en-IN", {
         style: "currency",
         currency: "INR",
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
-    }).format(Number(amount) || 0);
+    }).format(Number(value) || 0);
 }
 
 function getToday() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
 
     return `${year}-${month}-${day}`;
 }
@@ -84,54 +81,88 @@ function getCurrentMonth() {
     return getToday().slice(0, 7);
 }
 
-function getElementValue(id) {
+function setValue(id, value) {
     const element = $(id);
-    return element ? element.value.trim() : "";
-}
-
-function setElementValue(id, value) {
-    const element = $(id);
-
-    if (element) {
-        element.value = value;
-    }
+    if (element) element.value = value;
 }
 
 function showElement(id, visible) {
     const element = $(id);
-
-    if (element) {
-        element.hidden = !visible;
-    }
+    if (element) element.hidden = !visible;
 }
 
-function setButtonLoading(id, loading, loadingText) {
+function setButtonState(id, disabled, text) {
     const button = $(id);
-
     if (!button) return;
 
-    if (loading) {
-        button.dataset.originalText = button.textContent;
-        button.textContent = loadingText;
+    if (disabled) {
+        if (!button.disabled) {
+            button.dataset.originalText = button.textContent;
+        }
         button.disabled = true;
+        if (text) button.textContent = text;
     } else {
-        button.textContent =
-            button.dataset.originalText || button.textContent;
         button.disabled = false;
-        delete button.dataset.originalText;
+        if (button.dataset.originalText) {
+            button.textContent = button.dataset.originalText;
+            delete button.dataset.originalText;
+        }
     }
 }
 
+/*
+ * Find credentials using IDs, names, or input types.
+ * This supports authEmail/authPassword and common alternatives.
+ */
+function getAuthCredentials() {
+    const emailElement =
+        $("authEmail") ||
+        $("signupEmail") ||
+        $("signUpEmail") ||
+        $("signinEmail") ||
+        $("signInEmail") ||
+        $("loginEmail") ||
+        document.querySelector(
+            '#authForm input[type="email"], ' +
+            '#signupForm input[type="email"], ' +
+            '#signUpForm input[type="email"], ' +
+            '#signinForm input[type="email"], ' +
+            '#loginForm input[type="email"], ' +
+            'input[name="email"], input[type="email"]'
+        );
 
-// 3. INITIALIZE SUPABASE
+    const passwordElement =
+        $("authPassword") ||
+        $("signupPassword") ||
+        $("signUpPassword") ||
+        $("signinPassword") ||
+        $("signInPassword") ||
+        $("loginPassword") ||
+        document.querySelector(
+            '#authForm input[type="password"], ' +
+            '#signupForm input[type="password"], ' +
+            '#signUpForm input[type="password"], ' +
+            '#signinForm input[type="password"], ' +
+            '#loginForm input[type="password"], ' +
+            'input[name="password"], input[type="password"]'
+        );
+
+    return {
+        emailElement,
+        passwordElement,
+        email: emailElement ? emailElement.value.trim() : "",
+        password: passwordElement ? passwordElement.value : ""
+    };
+}
+
+
+// 3. SUPABASE INITIALIZATION
 
 function initializeSupabase() {
-    if (
-        !window.supabase ||
-        typeof window.supabase.createClient !== "function"
-    ) {
+    if (!window.supabase ||
+        typeof window.supabase.createClient !== "function") {
         setMessage(
-            "Supabase failed to load. Check the Supabase script in index.html.",
+            "Supabase library did not load. Check the Supabase script in index.html.",
             true
         );
         return false;
@@ -142,24 +173,20 @@ function initializeSupabase() {
             SUPABASE_URL,
             SUPABASE_PUBLISHABLE_KEY
         );
-
         return true;
     } catch (error) {
-        setMessage(
-            "Could not initialize Supabase: " + error.message,
-            true
-        );
+        setMessage("Supabase initialization failed: " + error.message, true);
         return false;
     }
 }
 
 
-// 4. AUTHENTICATION UI
+// 4. SHOW LOGIN OR DASHBOARD
 
 function showSignedOut() {
     currentUser = null;
     expenses = [];
-    expenseRequestInProgress = false;
+    expenseBusy = false;
 
     showElement("authSection", true);
     showElement("appSection", false);
@@ -167,22 +194,20 @@ function showSignedOut() {
     renderDashboard();
 }
 
-function showSignedIn(user) {
+async function showSignedIn(user) {
     if (!user) return;
 
     currentUser = user;
-
     showElement("authSection", false);
     showElement("appSection", true);
 
-    const emailElement = $("userEmail");
-
-    if (emailElement) {
-        emailElement.textContent = user.email || "";
+    if ($("userEmail")) {
+        $("userEmail").textContent = user.email || "";
     }
 
-    setElementValue("expenseDate", getToday());
-    return loadExpenses();
+    setValue("expenseDate", getToday());
+
+    await loadExpenses();
 }
 
 
@@ -191,34 +216,54 @@ function showSignedIn(user) {
 async function signUp(event) {
     if (event) event.preventDefault();
 
-    if (authRequestInProgress) return;
+    if (authBusy) return;
 
     if (!supabaseClient) {
-        setMessage("Supabase is not initialized. Refresh the page.", true);
+        setMessage("Supabase is not ready. Refresh the page.", true);
         return;
     }
 
-    // These are the actual IDs in your index.html.
-    const email = getElementValue("authEmail");
-    const password = $("authPassword")?.value || "";
+    const credentials = getAuthCredentials();
+    const { email, password, emailElement, passwordElement } = credentials;
+
+    if (!emailElement || !passwordElement) {
+        setMessage(
+            "The email or password input was not found. Check the IDs in index.html.",
+            true
+        );
+        console.error("PennyPilot: authentication input elements not found.", {
+            emailElementFound: Boolean(emailElement),
+            passwordElementFound: Boolean(passwordElement)
+        });
+        return;
+    }
 
     if (!email || !password) {
-        setMessage("Please enter your email and password.", true);
+        setMessage(
+            "The email or password field is empty. Enter both fields and try again.",
+            true
+        );
+        console.log("PennyPilot credential check:", {
+            emailFieldFound: true,
+            passwordFieldFound: true,
+            emailHasValue: Boolean(email),
+            passwordHasValue: Boolean(password)
+        });
         return;
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        setMessage("Please enter a valid email address.", true);
+        setMessage("Enter a valid email address.", true);
         return;
     }
 
     if (password.length < 6) {
-        setMessage("Password must contain at least 6 characters.", true);
+        setMessage("Your password must be at least 6 characters.", true);
         return;
     }
 
-    authRequestInProgress = true;
-    setButtonLoading("signUpButton", true, "Creating account...");
+    authBusy = true;
+    setButtonState("signUpButton", true, "Creating account...");
     setMessage("Creating your account...");
 
     try {
@@ -228,26 +273,26 @@ async function signUp(event) {
         });
 
         if (error) {
-            setMessage(error.message, true);
+            setMessage("Sign-up failed: " + error.message, true);
             return;
         }
 
         if (data.session && data.user) {
             await showSignedIn(data.user);
-            setMessage("Account created successfully!");
+            setMessage("Your account was created successfully.");
         } else {
             setMessage(
-                "Account request successful. Check your email for a confirmation link if email confirmation is enabled. After confirming, sign in."
+                "Signup request accepted. Check your email for a confirmation link if email confirmation is enabled. Then sign in."
             );
         }
     } catch (error) {
         setMessage(
-            error.message || "Unable to create your account.",
+            "Sign-up error: " + (error.message || "Unknown error"),
             true
         );
     } finally {
-        authRequestInProgress = false;
-        setButtonLoading("signUpButton", false);
+        authBusy = false;
+        setButtonState("signUpButton", false);
     }
 }
 
@@ -257,25 +302,39 @@ async function signUp(event) {
 async function signIn(event) {
     if (event) event.preventDefault();
 
-    if (authRequestInProgress) return;
+    if (authBusy) return;
 
     if (!supabaseClient) {
-        setMessage("Supabase is not initialized. Refresh the page.", true);
+        setMessage("Supabase is not ready. Refresh the page.", true);
         return;
     }
 
-    // Use the same actual input IDs as the HTML.
-    const email = getElementValue("authEmail");
-    const password = $("authPassword")?.value || "";
+    const credentials = getAuthCredentials();
+    const { email, password, emailElement, passwordElement } = credentials;
+
+    if (!emailElement || !passwordElement) {
+        setMessage(
+            "Cannot find the email or password input. Check index.html.",
+            true
+        );
+        console.error("PennyPilot: missing authentication inputs.", {
+            emailFieldFound: Boolean(emailElement),
+            passwordFieldFound: Boolean(passwordElement)
+        });
+        return;
+    }
 
     if (!email || !password) {
-        setMessage("Please enter your email and password.", true);
+        setMessage(
+            "The email or password field is empty. Enter both fields and try again.",
+            true
+        );
         return;
     }
 
-    authRequestInProgress = true;
-    setButtonLoading("signInButton", true, "Signing in...");
-    setMessage("Signing in...");
+    authBusy = true;
+    setButtonState("signInButton", true, "Signing in...");
+    setMessage("Checking your account...");
 
     try {
         const { data, error } =
@@ -285,17 +344,20 @@ async function signIn(event) {
             });
 
         if (error) {
-            setMessage(error.message, true);
+            setMessage("Sign-in failed: " + error.message, true);
             return;
         }
 
         await showSignedIn(data.user);
-        setMessage("Signed in successfully!");
+        setMessage("Signed in successfully.");
     } catch (error) {
-        setMessage(error.message || "Unable to sign in.", true);
+        setMessage(
+            "Sign-in error: " + (error.message || "Unknown error"),
+            true
+        );
     } finally {
-        authRequestInProgress = false;
-        setButtonLoading("signInButton", false);
+        authBusy = false;
+        setButtonState("signInButton", false);
     }
 }
 
@@ -304,14 +366,13 @@ async function signIn(event) {
 
 async function signOut(event) {
     if (event) event.preventDefault();
-
     if (!supabaseClient) return;
 
     try {
         const { error } = await supabaseClient.auth.signOut();
 
         if (error) {
-            setMessage(error.message, true);
+            setMessage("Sign-out failed: " + error.message, true);
             return;
         }
 
@@ -323,44 +384,40 @@ async function signOut(event) {
 }
 
 
-// 8. LOAD EXPENSES FROM SUPABASE
+// 8. LOAD USER EXPENSES
 
 async function loadExpenses() {
-    if (!supabaseClient || !currentUser || expenseRequestInProgress) {
-        return;
-    }
+    if (!supabaseClient || !currentUser || expenseBusy) return;
 
-    expenseRequestInProgress = true;
+    expenseBusy = true;
+    const requestedUserId = currentUser.id;
 
     try {
-        const userId = currentUser.id;
-
         const { data, error } = await supabaseClient
             .from("expenses")
             .select("*")
-            .eq("user_id", userId)
+            .eq("user_id", requestedUserId)
             .order("expense_date", { ascending: false })
             .order("created_at", { ascending: false });
 
         if (error) {
-            setMessage("Could not load expenses: " + error.message, true);
+            setMessage("Loading expenses failed: " + error.message, true);
             return;
         }
 
-        // Ignore results if the user changed while the request was running.
-        if (!currentUser || currentUser.id !== userId) return;
+        if (!currentUser || currentUser.id !== requestedUserId) return;
 
         expenses = data || [];
         renderDashboard();
     } catch (error) {
         setMessage(error.message || "Unable to load expenses.", true);
     } finally {
-        expenseRequestInProgress = false;
+        expenseBusy = false;
     }
 }
 
 
-// 9. ADD AN EXPENSE
+// 9. ADD EXPENSE
 
 async function addExpense(event) {
     if (event) event.preventDefault();
@@ -370,11 +427,11 @@ async function addExpense(event) {
         return;
     }
 
-    const title = getElementValue("expenseTitle");
-    const amountText = getElementValue("expenseAmount");
-    const category = getElementValue("expenseCategory");
-    const expenseDate = getElementValue("expenseDate");
-    const description = getElementValue("expenseDescription");
+    const title = $("expenseTitle")?.value.trim() || "";
+    const amountText = $("expenseAmount")?.value.trim() || "";
+    const category = $("expenseCategory")?.value || "";
+    const expenseDate = $("expenseDate")?.value || "";
+    const description = $("expenseDescription")?.value.trim() || "";
     const amount = Number(amountText);
 
     if (!title) {
@@ -382,43 +439,20 @@ async function addExpense(event) {
         return;
     }
 
-    if (title.length > 150) {
-        setMessage("Expense name must be 150 characters or fewer.", true);
-        return;
-    }
-
-    if (
-        !amountText ||
-        !Number.isFinite(amount) ||
-        amount <= 0
-    ) {
-        setMessage("Enter an amount greater than zero.", true);
+    if (!amountText || !Number.isFinite(amount) || amount <= 0) {
+        setMessage("Enter a valid amount greater than zero.", true);
         return;
     }
 
     if (!CATEGORIES.includes(category)) {
-        setMessage("Please choose a valid expense category.", true);
+        setMessage("Choose a valid category.", true);
         return;
     }
 
     if (!expenseDate) {
-        setMessage("Please choose an expense date.", true);
+        setMessage("Choose the expense date.", true);
         return;
     }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
-        setMessage("Please enter a valid expense date.", true);
-        return;
-    }
-
-    const expenseData = {
-        user_id: currentUser.id,
-        title,
-        amount,
-        category,
-        expense_date: expenseDate,
-        description: description || null
-    };
 
     const submitButton = $("expenseForm")?.querySelector(
         'button[type="submit"]'
@@ -431,41 +465,35 @@ async function addExpense(event) {
     }
 
     try {
-        setMessage("Saving expense...");
-
         const { data, error } = await supabaseClient
             .from("expenses")
-            .insert([expenseData])
+            .insert([{
+                user_id: currentUser.id,
+                title,
+                amount,
+                category,
+                expense_date: expenseDate,
+                description: description || null
+            }])
             .select()
             .single();
 
         if (error) {
-            setMessage("Could not save expense: " + error.message, true);
+            setMessage("Saving expense failed: " + error.message, true);
             return;
         }
 
         expenses.push(data);
 
-        expenses.sort((a, b) => {
-            const dateCompare = String(b.expense_date).localeCompare(
-                String(a.expense_date)
-            );
+        expenses.sort((a, b) =>
+            String(b.expense_date).localeCompare(String(a.expense_date))
+        );
 
-            if (dateCompare !== 0) return dateCompare;
-
-            return String(b.created_at || "").localeCompare(
-                String(a.created_at || "")
-            );
-        });
-
-        const form = $("expenseForm");
-
-        if (form) form.reset();
-
-        setElementValue("expenseDate", getToday());
+        $("expenseForm")?.reset();
+        setValue("expenseDate", getToday());
 
         renderDashboard();
-        setMessage("Expense added successfully!");
+        setMessage("Expense added successfully.");
     } catch (error) {
         setMessage(error.message || "Unable to add expense.", true);
     } finally {
@@ -479,7 +507,7 @@ async function addExpense(event) {
 }
 
 
-// 10. DELETE AN EXPENSE
+// 10. DELETE EXPENSE
 
 async function deleteExpense(id) {
     if (!supabaseClient || !currentUser) {
@@ -487,20 +515,12 @@ async function deleteExpense(id) {
         return;
     }
 
+    if (!window.confirm("Delete this expense?")) return;
+
     const expenseId = Number(id);
-
-    if (!Number.isSafeInteger(expenseId) || expenseId <= 0) {
-        setMessage("Invalid expense ID.", true);
-        return;
-    }
-
-    if (!window.confirm("Are you sure you want to delete this expense?")) {
-        return;
-    }
+    const userId = currentUser.id;
 
     try {
-        const userId = currentUser.id;
-
         const { error } = await supabaseClient
             .from("expenses")
             .delete()
@@ -508,125 +528,105 @@ async function deleteExpense(id) {
             .eq("user_id", userId);
 
         if (error) {
-            setMessage("Could not delete expense: " + error.message, true);
+            setMessage("Deleting expense failed: " + error.message, true);
             return;
         }
-
-        if (!currentUser || currentUser.id !== userId) return;
 
         expenses = expenses.filter(
             expense => Number(expense.id) !== expenseId
         );
 
         renderDashboard();
-        setMessage("Expense deleted successfully.");
+        setMessage("Expense deleted.");
     } catch (error) {
         setMessage(error.message || "Unable to delete expense.", true);
     }
 }
 
 
-// 11. SEARCH AND FILTER
+// 11. FILTER EXPENSES
 
 function getFilteredExpenses() {
-    let filtered = [...expenses];
+    let result = [...expenses];
 
-    const search = getElementValue("searchExpenses").toLowerCase();
-    const category = getElementValue("filterCategory");
-    const month = getElementValue("filterMonth");
+    const search = $("searchExpenses")?.value.trim().toLowerCase() || "";
+    const category = $("filterCategory")?.value || "";
+    const month = $("filterMonth")?.value || "";
 
     if (search) {
-        filtered = filtered.filter(expense => {
-            const title = String(expense.title || "").toLowerCase();
-            const description = String(
-                expense.description || ""
-            ).toLowerCase();
-
-            return title.includes(search) || description.includes(search);
-        });
+        result = result.filter(expense =>
+            String(expense.title || "").toLowerCase().includes(search) ||
+            String(expense.description || "").toLowerCase().includes(search)
+        );
     }
 
-    if (category && category !== "all") {
-        filtered = filtered.filter(
-            expense => expense.category === category
-        );
+    if (category) {
+        result = result.filter(expense => expense.category === category);
     }
 
     if (month) {
-        filtered = filtered.filter(
-            expense => String(expense.expense_date || "").slice(0, 7) === month
+        result = result.filter(expense =>
+            String(expense.expense_date || "").startsWith(month)
         );
     }
 
-    return filtered;
+    return result;
 }
 
 
-// 12. RENDER EXPENSE HISTORY
+// 12. EXPENSE HISTORY
 
 function renderExpenseList() {
     const container = $("expenseList");
-
     if (!container) return;
 
-    const filtered = getFilteredExpenses();
+    const result = getFilteredExpenses();
 
-    if (filtered.length === 0) {
+    if (result.length === 0) {
         container.innerHTML = "<p>No expenses found.</p>";
         return;
     }
 
-    container.innerHTML = filtered.map(expense => `
-        <div class="expense-item"
-             data-expense-id="${escapeHTML(expense.id)}">
-
+    container.innerHTML = result.map(expense => `
+        <article class="expense-item">
             <div class="expense-details">
                 <strong>${escapeHTML(expense.title)}</strong>
                 <p>${escapeHTML(expense.category)}</p>
                 <small>${escapeHTML(expense.expense_date || "")}</small>
-
                 ${
                     expense.description
                         ? `<p>${escapeHTML(expense.description)}</p>`
                         : ""
                 }
             </div>
-
             <div class="expense-actions">
                 <strong>${formatCurrency(expense.amount)}</strong>
-                <button
-                    type="button"
-                    class="delete-expense"
-                    data-delete-expense="${escapeHTML(expense.id)}"
-                    aria-label="Delete ${escapeHTML(expense.title)}">
+                <button type="button"
+                        data-delete-expense="${escapeHTML(expense.id)}">
                     Delete
                 </button>
             </div>
-        </div>
+        </article>
     `).join("");
 }
 
 
-// 13. DASHBOARD SUMMARY AND BUDGET
+// 13. SUMMARY AND MONTHLY BUDGET
 
 function renderSummary() {
     const total = expenses.reduce(
-        (sum, expense) => sum + Number(expense.amount || 0),
-        0
+        (sum, item) => sum + Number(item.amount || 0), 0
     );
 
-    const today = getToday();
-    const month = getCurrentMonth();
-
     const todayTotal = expenses
-        .filter(expense => expense.expense_date === today)
-        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+        .filter(item => item.expense_date === getToday())
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
     const monthTotal = expenses
-        .filter(expense =>
-            String(expense.expense_date || "").startsWith(month)
+        .filter(item =>
+            String(item.expense_date || "").startsWith(getCurrentMonth())
         )
-        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
     const values = {
         totalExpenses: formatCurrency(total),
@@ -636,20 +636,15 @@ function renderSummary() {
     };
 
     Object.entries(values).forEach(([id, value]) => {
-        const element = $(id);
-        if (element) element.textContent = value;
+        if ($(id)) $(id).textContent = value;
     });
 
     const remaining = MONTHLY_BUDGET - monthTotal;
+    const percentage = Math.min(100, monthTotal / MONTHLY_BUDGET * 100);
 
     if ($("budgetRemaining")) {
         $("budgetRemaining").textContent = formatCurrency(remaining);
     }
-
-    const percentage = Math.min(
-        100,
-        (monthTotal / MONTHLY_BUDGET) * 100
-    );
 
     if ($("budgetProgress")) {
         $("budgetProgress").style.width = `${percentage}%`;
@@ -663,26 +658,18 @@ function renderSummary() {
     }
 
     if ($("budgetMessage")) {
-        if (monthTotal > MONTHLY_BUDGET) {
-            $("budgetMessage").textContent =
-                "You have exceeded your monthly budget by " +
-                formatCurrency(monthTotal - MONTHLY_BUDGET) + ".";
-        } else {
-            $("budgetMessage").textContent =
-                `${percentage.toFixed(1)}% of your monthly budget used.`;
-        }
+        $("budgetMessage").textContent =
+            monthTotal > MONTHLY_BUDGET
+                ? `Budget exceeded by ${formatCurrency(monthTotal - MONTHLY_BUDGET)}.`
+                : `${percentage.toFixed(1)}% of your monthly budget used.`;
     }
 }
 
 
-// 14. CATEGORY TOTALS
+// 14. CATEGORY BREAKDOWN
 
 function getCategoryTotals() {
-    const totals = {};
-
-    CATEGORIES.forEach(category => {
-        totals[category] = 0;
-    });
+    const totals = Object.fromEntries(CATEGORIES.map(category => [category, 0]));
 
     expenses.forEach(expense => {
         const category = CATEGORIES.includes(expense.category)
@@ -697,7 +684,6 @@ function getCategoryTotals() {
 
 function renderCategoryTotals() {
     const container = $("categoryTotals");
-
     if (!container) return;
 
     const totals = Object.entries(getCategoryTotals())
@@ -718,33 +704,24 @@ function renderCategoryTotals() {
 }
 
 
-// 15. EXPENSE CHART
+// 15. CHART
 
 function renderChart() {
     const canvas = $("expenseChart");
 
-    if (!canvas || typeof window.Chart === "undefined") {
-        return;
-    }
-
-    const totals = getCategoryTotals();
-
-    const labels = Object.keys(totals).filter(
-        category => totals[category] > 0
-    );
-
-    const values = labels.map(category => totals[category]);
+    if (!canvas || !window.Chart) return;
 
     if (expenseChart) {
         expenseChart.destroy();
         expenseChart = null;
     }
 
+    const totals = getCategoryTotals();
+    const labels = Object.keys(totals).filter(category => totals[category] > 0);
+
     if (labels.length === 0) {
         const context = canvas.getContext("2d");
-        if (context) {
-            context.clearRect(0, 0, canvas.width, canvas.height);
-        }
+        if (context) context.clearRect(0, 0, canvas.width, canvas.height);
         return;
     }
 
@@ -754,7 +731,7 @@ function renderChart() {
             labels,
             datasets: [{
                 label: "Expenses",
-                data: values,
+                data: labels.map(category => totals[category]),
                 borderWidth: 1
             }]
         },
@@ -762,9 +739,7 @@ function renderChart() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: {
-                    position: "bottom"
-                },
+                legend: { position: "bottom" },
                 tooltip: {
                     callbacks: {
                         label(context) {
@@ -778,16 +753,14 @@ function renderChart() {
 }
 
 
-// 16. SPENDING INSIGHTS
+// 16. INSIGHTS
 
 function renderInsights() {
     const container = $("insights");
-
     if (!container) return;
 
     if (expenses.length === 0) {
-        container.textContent =
-            "Add your first expense to see your spending insights.";
+        container.textContent = "Add expenses to see your spending insights.";
         return;
     }
 
@@ -795,37 +768,25 @@ function renderInsights() {
         .filter(([, amount]) => amount > 0)
         .sort((a, b) => b[1] - a[1]);
 
-    const month = getCurrentMonth();
-
     const monthlyTotal = expenses
-        .filter(expense =>
-            String(expense.expense_date || "").startsWith(month)
+        .filter(item =>
+            String(item.expense_date || "").startsWith(getCurrentMonth())
         )
-        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
-    let message = "";
+    let message = totals.length
+        ? `Your highest-spending category is ${totals[0][0]} (${formatCurrency(totals[0][1])}). `
+        : "";
 
-    if (totals.length > 0) {
-        message =
-            `Your highest-spending category is ${totals[0][0]} ` +
-            `(${formatCurrency(totals[0][1])}). `;
-    }
-
-    if (monthlyTotal > MONTHLY_BUDGET) {
-        message +=
-            `You exceeded your ₹10,000 monthly budget by ` +
-            `${formatCurrency(monthlyTotal - MONTHLY_BUDGET)}.`;
-    } else {
-        message +=
-            `${formatCurrency(MONTHLY_BUDGET - monthlyTotal)} ` +
-            "remains in your monthly budget.";
-    }
+    message += monthlyTotal > MONTHLY_BUDGET
+        ? `You exceeded your budget by ${formatCurrency(monthlyTotal - MONTHLY_BUDGET)}.`
+        : `${formatCurrency(MONTHLY_BUDGET - monthlyTotal)} remains in your monthly budget.`;
 
     container.textContent = message;
 }
 
 
-// 17. RENDER COMPLETE DASHBOARD
+// 17. RENDER EVERYTHING
 
 function renderDashboard() {
     renderSummary();
@@ -836,32 +797,26 @@ function renderDashboard() {
 }
 
 
-// 18. QUICK ADD BUTTONS
+// 18. QUICK ADD
 
 function setupQuickCash() {
     document.querySelectorAll("[data-quick-cash]").forEach(button => {
         button.addEventListener("click", () => {
-            const amount = button.dataset.quickCash;
+            setValue("expenseTitle", "Quick Expense");
+            setValue("expenseAmount", button.dataset.quickCash);
+            setValue("expenseCategory", "Other");
+            setValue("expenseDate", getToday());
 
-            setElementValue("expenseTitle", "Quick Expense");
-            setElementValue("expenseAmount", amount);
-            setElementValue("expenseCategory", "Other");
-            setElementValue("expenseDate", getToday());
-
-            const form = $("expenseForm");
-
-            if (form) {
-                form.scrollIntoView({
-                    behavior: "smooth",
-                    block: "center"
-                });
-            }
+            $("expenseForm")?.scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+            });
         });
     });
 }
 
 
-// 19. VOICE EXPENSE INPUT
+// 19. VOICE INPUT
 
 function setupVoiceInput() {
     const button = $("voiceButton");
@@ -874,102 +829,68 @@ function setupVoiceInput() {
 
     if (!SpeechRecognition) {
         button.disabled = true;
-
-        if (message) {
-            message.textContent =
-                "Voice input is not supported in this browser.";
-        }
-
+        if (message) message.textContent =
+            "Voice input is not supported by this browser.";
         return;
     }
 
     button.addEventListener("click", () => {
         const recognition = new SpeechRecognition();
-
         recognition.lang = "en-IN";
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
         if (message) message.textContent = "Listening...";
+        button.disabled = true;
 
         recognition.onresult = event => {
             const transcript = event.results[0][0].transcript;
-            const lower = transcript.toLowerCase();
-
-            if (message) message.textContent = `Heard: ${transcript}`;
-
             const amountMatch = transcript.match(
                 /(?:₹\s*|rs\.?\s*|rupees?\s*)?(\d+(?:\.\d+)?)(?:\s*rupees?)?/i
             );
 
-            if (amountMatch) {
-                setElementValue("expenseAmount", amountMatch[1]);
-            }
-
-            const categoryWords = {
-                food: "Food",
-                lunch: "Food",
-                dinner: "Food",
-                transport: "Transport",
-                travel: "Transport",
-                shopping: "Shopping",
-                education: "Education",
-                bills: "Bills",
-                health: "Health",
-                entertainment: "Entertainment"
-            };
-
-            for (const [word, category] of Object.entries(categoryWords)) {
-                if (lower.includes(word)) {
-                    setElementValue("expenseCategory", category);
-                    break;
-                }
-            }
+            if (message) message.textContent = `Heard: ${transcript}`;
 
             if (amountMatch) {
+                setValue("expenseAmount", amountMatch[1]);
+
                 const title = transcript
                     .replace(amountMatch[0], "")
-                    .replace(
-                        /\b(rupees?|rs|for|spent|expense|on|of|in)\b/gi,
-                        ""
-                    )
+                    .replace(/\b(rupees?|rs|for|spent|expense|on|of|in)\b/gi, "")
                     .trim();
 
-                if (title) {
-                    setElementValue("expenseTitle", title);
+                if (title) setValue("expenseTitle", title);
+            }
+
+            const lower = transcript.toLowerCase();
+
+            for (const category of CATEGORIES) {
+                if (lower.includes(category.toLowerCase())) {
+                    setValue("expenseCategory", category);
+                    break;
                 }
             }
         };
 
         recognition.onerror = event => {
-            if (message) {
-                message.textContent = `Voice input error: ${event.error}`;
-            }
+            if (message) message.textContent = `Voice error: ${event.error}`;
         };
 
         recognition.onend = () => {
-            if (button) button.disabled = false;
-            if (message && message.textContent === "Listening...") {
-                message.textContent = "Voice input ended.";
-            }
+            button.disabled = false;
         };
-
-        button.disabled = true;
 
         try {
             recognition.start();
         } catch (error) {
             button.disabled = false;
-
-            if (message) {
-                message.textContent = "Could not start voice input. Try again.";
-            }
+            if (message) message.textContent = "Could not start voice input. Try again.";
         }
     });
 }
 
 
-// 20. CONNECT ALL BUTTONS AND FORMS
+// 20. EVENT LISTENERS
 
 function setupEventListeners() {
     $("signUpButton")?.addEventListener("click", signUp);
@@ -988,15 +909,11 @@ function setupEventListeners() {
     $("filterMonth")?.addEventListener("change", renderExpenseList);
 
     document.addEventListener("click", event => {
-        const target = event.target;
+        if (!(event.target instanceof Element)) return;
 
-        if (!(target instanceof Element)) return;
+        const button = event.target.closest("[data-delete-expense]");
 
-        const deleteButton = target.closest("[data-delete-expense]");
-
-        if (deleteButton) {
-            deleteExpense(deleteButton.dataset.deleteExpense);
-        }
+        if (button) deleteExpense(button.dataset.deleteExpense);
     });
 
     setupQuickCash();
@@ -1004,20 +921,20 @@ function setupEventListeners() {
 }
 
 
-// 21. APP STARTUP
+// 21. START APPLICATION
 
 async function initializeApp() {
     if (!initializeSupabase()) return;
 
     setupEventListeners();
-    setElementValue("expenseDate", getToday());
+    setValue("expenseDate", getToday());
 
     try {
         const { data, error } = await supabaseClient.auth.getSession();
 
         if (error) {
             showSignedOut();
-            setMessage("Unable to check login session: " + error.message, true);
+            setMessage("Session error: " + error.message, true);
             return;
         }
 
@@ -1034,7 +951,6 @@ async function initializeApp() {
             }
 
             if (event === "SIGNED_IN" && session?.user) {
-                // Avoid duplicate reload if the current user is already shown.
                 const sameUser =
                     currentUser && currentUser.id === session.user.id;
 
@@ -1043,20 +959,19 @@ async function initializeApp() {
                 showElement("authSection", false);
                 showElement("appSection", true);
 
-                if (!sameUser) {
-                    showSignedIn(session.user);
+                if ($("userEmail")) {
+                    $("userEmail").textContent = session.user.email || "";
                 }
 
-                const emailElement = $("userEmail");
-                if (emailElement) {
-                    emailElement.textContent = session.user.email || "";
+                if (!sameUser) {
+                    void showSignedIn(session.user);
                 }
             }
         });
     } catch (error) {
         showSignedOut();
         setMessage(
-            error.message || "Unable to initialize PennyPilot.",
+            "App startup error: " + (error.message || "Unknown error"),
             true
         );
     }
