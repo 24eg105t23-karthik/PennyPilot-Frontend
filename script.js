@@ -1,4 +1,4 @@
-```javascript
+
 const MONTHLY_BUDGET = 10000;
 
 const CATEGORIES = [
@@ -919,4 +919,3 @@ document.querySelectorAll("[data-quick-cash]").forEach(button => {
 // START THE DASHBOARD
 loadExpensesFromStorage();
 renderDashboard();
-```
