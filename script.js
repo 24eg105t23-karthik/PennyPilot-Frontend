@@ -1,4 +1,4 @@
-```javascript
+
 /* =========================================================
    PENNYPILOT — COMPLETE script.js
    Supabase authentication, password recovery, expenses,
@@ -1738,4 +1738,4 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
 });
-```
+
